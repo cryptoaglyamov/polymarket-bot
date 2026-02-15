@@ -14,6 +14,7 @@ jobs:
       uses: actions/checkout@v3
       
     - name: Test multiple Asia proxies
+      continue-on-error: true  # Продолжаем даже при ошибках
       run: |
         echo "=== ТЕСТ АЗИАТСКИХ ПРОКСИ ==="
         
@@ -24,8 +25,18 @@ jobs:
           "134.209.105.155:3128"     # Сингапур
           "68.183.141.128:3128"      # Сингапур
           "139.162.78.109:3128"      # Япония
-          "139.162.44.17:3128"        # Япония
+          "139.162.44.17:3128"       # Япония
+          "128.199.156.164:3128"     # Сингапур
+          "165.22.73.186:3128"       # Сингапур
+          "167.71.43.241:3128"       # Сингапур
+          "139.59.103.81:3128"       # Сингапур
+          "68.183.94.177:3128"       # Сингапур
+          "167.71.239.153:3128"      # Сингапур
+          "139.162.190.165:3128"     # Япония
+          "139.162.239.142:3128"     # Япония
         )
+        
+        WORKING_PROXY=""
         
         for PROXY in "${PROXIES[@]}"; do
           echo ""
@@ -33,53 +44,56 @@ jobs:
           echo "Тестируем прокси: $PROXY"
           echo "=================================="
           
-          # Проверка доступности порта
-          echo "1. Проверка порта:"
-          timeout 3 nc -zv ${PROXY/:/ } 2>&1 && echo "✅ Порт открыт" || echo "❌ Порт закрыт"
-          
-          # Проверка внешнего IP
-          echo "2. Внешний IP через прокси:"
+          # Проверка внешнего IP через прокси (таймаут 5 секунд)
           IP=$(timeout 5 curl -x http://$PROXY -s https://api.ipify.org 2>/dev/null)
           if [ -n "$IP" ]; then
-            echo "✅ IP: $IP"
+            echo "✅ IP через прокси: $IP"
+            
+            # Проверка Polymarket
+            STATUS=$(timeout 5 curl -I -x http://$PROXY -s -o /dev/null -w "%{http_code}" https://clob.polymarket.com 2>/dev/null)
+            if [ "$STATUS" = "200" ]; then
+              echo "✅ Polymarket доступен (статус: $STATUS)"
+              WORKING_PROXY="$PROXY"
+              echo "🎯 НАЙДЕН РАБОЧИЙ ПРОКСИ: $PROXY"
+              break
+            else
+              echo "❌ Polymarket недоступен (статус: $STATUS)"
+            fi
           else
-            echo "❌ Не удалось получить IP"
+            echo "❌ Прокси не отвечает"
           fi
-          
-          # Проверка Polymarket
-          echo "3. Подключение к Polymarket:"
-          STATUS=$(timeout 5 curl -I -x http://$PROXY -s -o /dev/null -w "%{http_code}" https://clob.polymarket.com 2>/dev/null)
-          if [ "$STATUS" = "200" ]; then
-            echo "✅ Polymarket доступен (статус: $STATUS)"
-          else
-            echo "❌ Polymarket недоступен (статус: $STATUS)"
-          fi
-          
-          echo ""
         done
         
-    - name: Set up proxy environment (если найден рабочий)
-      if: false  # Пока отключаем, сначала нужно найти рабочий прокси
+        if [ -n "$WORKING_PROXY" ]; then
+          echo "WORKING_PROXY=$WORKING_PROXY" >> $GITHUB_ENV
+          echo "✅ Найден рабочий прокси: $WORKING_PROXY"
+        else
+          echo "❌ НЕ НАЙДЕНО РАБОЧИХ ПРОКСИ"
+        fi
+        
+    - name: Set up proxy environment
+      if: env.WORKING_PROXY != ''
       run: |
-        echo "HTTP_PROXY=http://WORKING_PROXY:PORT" >> $GITHUB_ENV
-        echo "HTTPS_PROXY=http://WORKING_PROXY:PORT" >> $GITHUB_ENV
-        echo "http_proxy=http://WORKING_PROXY:PORT" >> $GITHUB_ENV
-        echo "https_proxy=http://WORKING_PROXY:PORT" >> $GITHUB_ENV
+        echo "HTTP_PROXY=http://${{ env.WORKING_PROXY }}" >> $GITHUB_ENV
+        echo "HTTPS_PROXY=http://${{ env.WORKING_PROXY }}" >> $GITHUB_ENV
+        echo "http_proxy=http://${{ env.WORKING_PROXY }}" >> $GITHUB_ENV
+        echo "https_proxy=http://${{ env.WORKING_PROXY }}" >> $GITHUB_ENV
         echo "NO_PROXY=localhost,127.0.0.1" >> $GITHUB_ENV
+        echo "✅ Прокси настроен: ${{ env.WORKING_PROXY }}"
         
     - name: Set up Python
-      if: false
+      if: env.WORKING_PROXY != ''
       uses: actions/setup-python@v4
       with:
         python-version: '3.10'
         
     - name: Install dependencies
-      if: false
+      if: env.WORKING_PROXY != ''
       run: |
         pip install -r requirements.txt
         
     - name: Run bot
-      if: false
+      if: env.WORKING_PROXY != ''
       env:
         PRIVATE_KEY: ${{ secrets.PRIVATE_KEY }}
         TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
@@ -87,10 +101,16 @@ jobs:
       run: python bot.py
       
     - name: Save state file
-      if: false
+      if: env.WORKING_PROXY != ''
       run: |
         git config --local user.email "action@github.com"
         git config --local user.name "GitHub Action"
         git add bot_state.json
         git diff --quiet && git diff --staged --quiet || git commit -m "Update bot state [skip ci]"
         git push
+        
+    - name: No proxy found
+      if: env.WORKING_PROXY == ''
+      run: |
+        echo "❌ НЕ НАЙДЕНО РАБОЧИХ ПРОКСИ"
+        echo "Попробуйте другой список прокси или настройте свой VPS"
