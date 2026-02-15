@@ -17,6 +17,9 @@ TELEGRAM_CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID')
 # 👇 ВАШ РЕАЛЬНЫЙ АДРЕС КОШЕЛЬКА С USDC
 REAL_WALLET_ADDRESS = "0xc28d92cB2D25b5282c526FA1875d0268D1C4c177"
 
+# 👇 БАЛАНС ДЛЯ ТЕСТОВ (установлен на $300)
+TEST_BALANCE = 300.0
+
 # 👇 РЕЖИМ ТЕСТИРОВАНИЯ
 TEST_MODE = True  # True = без реальных ставок, False = реальные ставки
 
@@ -25,6 +28,7 @@ if not PRIVATE_KEY:
 
 print("PRIVATE_KEY загружен:", PRIVATE_KEY[:10] + "..." + PRIVATE_KEY[-6:])
 print(f"🔧 РЕЖИМ ТЕСТИРОВАНИЯ: {'ВКЛЮЧЕН (без реальных ставок)' if TEST_MODE else 'ВЫКЛЮЧЕН (реальные ставки)'}")
+print(f"💰 ТЕСТОВЫЙ БАЛАНС: ${TEST_BALANCE}")
 
 CHAIN_ID = 137
 HOST = "https://clob.polymarket.com"
@@ -159,7 +163,7 @@ def check_midnight():
 
 # ========== ФУНКЦИИ ДЛЯ РАБОТЫ С POLYMARKET ==========
 
-def is_new_interval(minutes=15):
+def is_new_interval(minutes=5):
     """Проверяет, наступило ли начало интервала"""
     now = datetime.now(timezone(timedelta(hours=5)))
     return now.minute % minutes == 0 and now.second < 10
@@ -259,12 +263,12 @@ def get_token_id_and_price(market, direction: str):
     return clob_ids[index], prices[index]
 
 def check_balance():
-    """Проверка баланса USDC"""
+    """Проверка баланса USDC (тестовый режим)"""
     try:
         address = REAL_WALLET_ADDRESS
         print(f"Проверка баланса для реального адреса: {address}")
-        print("💰 Используем сохраненный баланс: $106.83")
-        return 106.83
+        print(f"💰 Используем тестовый баланс: ${TEST_BALANCE}")
+        return TEST_BALANCE
     except Exception as e:
         print(f"Ошибка проверки баланса: {e}")
         return None
@@ -275,12 +279,12 @@ def get_current_et_time():
     et_now = now_utc5 - timedelta(hours=10)
     return et_now
 
-def find_current_interval_market(coin, minutes=15):
+def find_current_interval_market(coin, minutes=5):
     """Находит рынок для текущего интервала"""
     try:
         et_now = get_current_et_time()
         
-        # Округляем время до ближайших 15 минут
+        # Округляем время до ближайших 5 минут
         current_minute = et_now.minute
         interval_start = (current_minute // minutes) * minutes
         et_interval = et_now.replace(minute=interval_start, second=0, microsecond=0)
@@ -326,7 +330,7 @@ def find_current_interval_market(coin, minutes=15):
         print(f"Ошибка поиска рынка: {e}")
         return None
 
-def get_previous_interval_market(coin, minutes=15):
+def get_previous_interval_market(coin, minutes=5):
     """Находит рынок для предыдущего интервала"""
     try:
         et_now = get_current_et_time()
@@ -350,7 +354,7 @@ def get_previous_interval_market(coin, minutes=15):
         print(f"\n=== Поиск предыдущего {minutes}-минутного рынка для {coin} на {prev_hour}:{prev_interval_start:02d} ET ===")
         
         # Получаем все рынки (включая закрытые)
-        url = f"https://gamma-api.polymarket.com/markets?limit=100&active=true"
+        url = f"https://gamma-api.polymarket.com/markets?limit=100"
         resp = requests.get(url, timeout=10)
         
         if resp.status_code == 200:
@@ -388,7 +392,7 @@ def get_previous_interval_market(coin, minutes=15):
         print(f"Ошибка поиска: {e}")
         return None
 
-def get_previous_interval_result(coin, minutes=15):
+def get_previous_interval_result(coin, minutes=5):
     """Получает результат предыдущего интервала"""
     try:
         market = get_previous_interval_market(coin, minutes)
@@ -506,7 +510,7 @@ def main():
     utc5_now = datetime.now(timezone(timedelta(hours=5)))
     print(f"Время ET: {et_now.strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"Время сервера (UTC+5): {utc5_now.strftime('%Y-%m-%d %H:%M:%S')}")
-    print(f"Интервал: 15 минут")
+    print(f"Интервал: 5 минут")
     
     client = ClobClient(
         host=HOST,
@@ -577,11 +581,11 @@ def main():
         send_telegram(msg)
     
     print("\n" + "="*50)
-    print(f"РЕЗУЛЬТАТЫ ПРЕДЫДУЩЕГО 15-МИНУТНОГО ИНТЕРВАЛА")
+    print(f"РЕЗУЛЬТАТЫ ПРЕДЫДУЩЕГО 5-МИНУТНОГО ИНТЕРВАЛА")
     print("="*50)
     
-    btc_prev_result = get_previous_interval_result("BTC", 15)
-    eth_prev_result = get_previous_interval_result("ETH", 15)
+    btc_prev_result = get_previous_interval_result("BTC", 5)
+    eth_prev_result = get_previous_interval_result("ETH", 5)
     
     msg_parts = []
     if btc_prev_result:
@@ -590,7 +594,7 @@ def main():
         msg_parts.append(f"ETH: {eth_prev_result}")
     
     if msg_parts:
-        msg = "📊 Результаты предыдущего 15-минутного интервала:\n" + "\n".join(msg_parts)
+        msg = "📊 Результаты предыдущего 5-минутного интервала:\n" + "\n".join(msg_parts)
         send_telegram(msg)
     
     print("\n" + "="*50)
@@ -635,14 +639,14 @@ def main():
                 save_state(state)
 
     print("\n" + "="*50)
-    print("ПРОВЕРКА НОВОГО 15-МИНУТНОГО ИНТЕРВАЛА")
+    print("ПРОВЕРКА НОВОГО 5-МИНУТНОГО ИНТЕРВАЛА")
     print("="*50)
     
-    if is_new_interval(15):
-        print("✅ Начало 15-минутного интервала - проверяем возможность ставки...")
+    if is_new_interval(5):
+        print("✅ Начало 5-минутного интервала - проверяем возможность ставки...")
         
         for coin in ["BTC", "ETH"]:
-            current_market = find_current_interval_market(coin, 15)
+            current_market = find_current_interval_market(coin, 5)
             
             if not current_market:
                 print(f"{coin} → рынок для текущего интервала не найден")
@@ -652,7 +656,7 @@ def main():
                 print(f"{coin} → рынок уже разрешен, пропускаем")
                 continue
             
-            prev_result = get_previous_interval_result(coin, 15)
+            prev_result = get_previous_interval_result(coin, 5)
             
             if not prev_result:
                 print(f"{coin} → нет результата предыдущего интервала")
@@ -676,7 +680,7 @@ def main():
             
             if success:
                 now_str = utc5_now.strftime('%Y-%m-%d %H:%M:%S')
-                msg = f"💰 Ставка: {coin} 15m → {next_dir} | ${next_bet:.1f}"
+                msg = f"💰 Ставка: {coin} 5m → {next_dir} | ${next_bet:.1f}"
                 if TEST_MODE:
                     msg = "🧪 [ТЕСТ] " + msg
                 print(msg)
@@ -700,10 +704,10 @@ def main():
         current_minute = utc5_now.minute
         et_hour = get_current_et_time().hour
         et_minute = get_current_et_time().minute
-        next_interval = ((et_minute // 15) + 1) * 15
+        next_interval = ((et_minute // 5) + 1) * 5
         if next_interval >= 60:
             next_interval = 0
-        print(f"Сейчас {current_minute} минут, ET {et_hour}:{et_minute:02d}, следующий интервал в {et_hour}:{next_interval:02d}")
+        print(f"Сейчас {current_minute} минут, ET {et_hour}:{et_minute:02d}, следующий 5-минутный интервал в {et_hour}:{next_interval:02d}")
     
     print("\n" + "="*50)
     print("Бот завершил работу")
