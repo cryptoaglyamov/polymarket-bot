@@ -35,6 +35,11 @@ jobs:
       run: |
         git config --local user.email "action@github.com"
         git config --local user.name "GitHub Action"
-        git add test_bot_state.json
-        git diff --quiet && git diff --staged --quiet || git commit -m "Update test bot state [skip ci]"
-        git push
+        # Проверяем существование файла перед добавлением
+        if [ -f test_bot_state.json ]; then
+          git add test_bot_state.json
+          git diff --quiet && git diff --staged --quiet || git commit -m "Update test bot state [skip ci]"
+          git push
+        else
+          echo "Файл test_bot_state.json еще не создан, пропускаем сохранение"
+        fi
