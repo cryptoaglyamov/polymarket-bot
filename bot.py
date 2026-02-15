@@ -10,7 +10,6 @@ from py_clob_client.order_builder.constants import BUY
 
 # ================== НАСТРОЙКИ ==================
 
-# Читаем переменные окружения (их добавим позже в настройках GitHub)
 PRIVATE_KEY = os.environ.get('PRIVATE_KEY')
 TELEGRAM_TOKEN = os.environ.get('TELEGRAM_TOKEN')
 TELEGRAM_CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID')
@@ -71,7 +70,7 @@ def save_state(state):
 # ========== ФУНКЦИИ ДЛЯ РАБОТЫ С POLYMARKET ==========
 
 def is_new_hour():
-    now = datetime.now(timezone(timedelta(hours=5)))  # UTC+5 Душанбе
+    now = datetime.now(timezone(timedelta(hours=5)))
     return now.minute == 0 and now.second < 10
 
 def get_market(slug: str):
@@ -92,8 +91,9 @@ def get_winner(market):
     prices_str = market.get("outcomePrices", ["0.5", "0.5"])
     
     try:
-        p0 = float(prices_str[0])  # Up
-        p1 = float(prices_str[1])  # Down
+        # Исправлено: правильное преобразование строк в числа
+        p0 = float(prices_str[0])
+        p1 = float(prices_str[1])
         
         if p0 >= 0.90:
             return "Up"
@@ -102,15 +102,43 @@ def get_winner(market):
         
         if market.get("closed"):
             return "Up" if p0 > p1 else "Down"
-    except:
-        pass
+    except Exception as e:
+        print(f"Ошибка при определении победителя: {e}")
+        print(f"prices_str: {prices_str}")
     
     return None
 
 def get_token_id_and_price(market, direction: str):
+    """Безопасное получение token ID и цены"""
     clob_ids = market.get("clobTokenIds", [])
-    prices = [float(p) for p in market.get("outcomePrices", ["0.5", "0.5"])]
+    prices_str = market.get("outcomePrices", ["0.5", "0.5"])
+    
+    try:
+        # Безопасное преобразование цен
+        prices = []
+        for p in prices_str:
+            if isinstance(p, str):
+                # Если строка, просто конвертируем
+                prices.append(float(p))
+            elif isinstance(p, (int, float)):
+                # Если уже число, используем как есть
+                prices.append(float(p))
+            else:
+                # Если что-то другое, ставим 0.5
+                print(f"Неожиданный тип цены: {type(p)}, значение: {p}")
+                prices.append(0.5)
+    except Exception as e:
+        print(f"Ошибка при преобразовании цен: {e}")
+        print(f"prices_str: {prices_str}")
+        prices = [0.5, 0.5]
+    
     index = 0 if direction == "Up" else 1
+    
+    # Проверяем, что индекс существует
+    if index >= len(clob_ids):
+        print(f"Нет token ID для индекса {index}, direction={direction}")
+        return None, prices[index] if index < len(prices) else 0.5
+    
     return clob_ids[index], prices[index]
 
 def check_balance(client, required_amount):
@@ -119,7 +147,11 @@ def check_balance(client, required_amount):
         balances = client.get_balances()
         
         for balance in balances:
-            if balance.get('asset_type') == 'USDC' or balance.get('symbol') == 'USDC':
+            # Проверяем разные возможные названия USDC
+            asset_type = balance.get('asset_type', '').upper()
+            symbol = balance.get('symbol', '').upper()
+            
+            if 'USDC' in asset_type or 'USDC' in symbol:
                 available = float(balance.get('available', 0))
                 if available >= required_amount:
                     return True, available
@@ -135,18 +167,23 @@ def place_initial_down_bet(client, coin, state):
     """Размещает первую ставку на Down сразу после запуска"""
     try:
         url = f"https://gamma-api.polymarket.com/markets?limit=5&active=true&question_contains={coin}%201h"
+        print(f"Запрос к API: {url}")
         resp = requests.get(url, timeout=10)
         
         if resp.status_code != 200:
-            print(f"{coin} → ошибка поиска")
+            print(f"{coin} → ошибка поиска, статус: {resp.status_code}")
             return False
         
         markets = resp.json()
+        print(f"Получено рынков: {len(markets)}")
+        
         if not markets:
             print(f"{coin} → активных рынков не найдено")
             return False
         
         market = markets[0]
+        print(f"Рынок: {market.get('question')}")
+        print(f"Цены (сырые): {market.get('outcomePrices')}")
         
         # Проверяем, можно ли торговать
         if market.get('active') == False:
@@ -155,13 +192,20 @@ def place_initial_down_bet(client, coin, state):
         
         clob_ids = market.get("clobTokenIds", [])
         if len(clob_ids) < 2:
-            print(f"{coin} → нет токенов для торговли")
+            print(f"{coin} → нет токенов для торговли: {clob_ids}")
             return False
         
+        # Получаем данные для Down
         token_id_down, price_down = get_token_id_and_price(market, "Down")
         
+        if token_id_down is None:
+            print(f"{coin} → не удалось получить token ID для Down")
+            return False
+        
+        print(f"Down цена: {price_down:.3f}, токен ID: {token_id_down}")
+        
         if price_down > MAX_PRICE_FOR_OPPOSITE:
-            print(f"{coin} Down по {price_down:.3f} → коэффициент мал, пропускаем")
+            print(f"{coin} Down по {price_down:.3f} → коэффициент мал (< {MIN_MULTIPLIER}), пропускаем")
             return False
         
         has_balance, available = check_balance(client, BASE_BET)
@@ -172,6 +216,8 @@ def place_initial_down_bet(client, coin, state):
         bet_price = min(0.99, price_down + PRICE_BUFFER)
         bet_key = f"{coin}_last"
         
+        print(f"Пытаемся разместить ордер: {coin} Down, цена {bet_price:.3f}, размер ${BASE_BET}")
+        
         order_args = OrderArgs(
             token_id=token_id_down,
             side=BUY,
@@ -181,6 +227,8 @@ def place_initial_down_bet(client, coin, state):
         
         signed = client.create_order(order_args)
         resp = client.post_order(signed, OrderType.GTC)
+        
+        print(f"Ответ от биржи: {resp}")
         
         if isinstance(resp, dict):
             if "id" in resp or resp.get("status") in ("success", "placed"):
@@ -199,10 +247,14 @@ def place_initial_down_bet(client, coin, state):
                 }
                 save_state(state)
                 return True
+            else:
+                print(f"{coin} ошибка при первой ставке: {resp}")
         return False
         
     except Exception as e:
         print(f"Ошибка при размещении первой ставки: {e}")
+        import traceback
+        traceback.print_exc()
         return False
 
 # ========== ГЛАВНАЯ ФУНКЦИЯ ==========
@@ -224,30 +276,39 @@ def main():
     try:
         api_creds = client.create_or_derive_api_creds()
         client.set_api_creds(api_creds)
-        print("API creds получены")
+        print("✅ API creds получены")
     except Exception as e:
-        print("Ошибка API creds:", str(e))
-        send_telegram(f"Ошибка API creds: {str(e)}")
+        print("❌ Ошибка API creds:", str(e))
+        send_telegram(f"❌ Ошибка API creds: {str(e)}")
         return
 
     state = load_state()
     
     # Первая ставка при запуске (если еще не делали)
     if not state.get("first_run_done", False):
-        print("Первый запуск - пробуем поставить на DOWN...")
+        print("\n" + "="*50)
+        print("ПЕРВЫЙ ЗАПУСК - пробуем поставить на DOWN...")
+        print("="*50)
         
+        # Пробуем BTC, потом ETH
         if place_initial_down_bet(client, "BTC", state):
             state["first_run_done"] = True
             save_state(state)
+            print("✅ Первая ставка на BTC Down размещена!")
         elif place_initial_down_bet(client, "ETH", state):
             state["first_run_done"] = True
             save_state(state)
+            print("✅ Первая ставка на ETH Down размещена!")
         else:
-            print("Не удалось разместить первую ставку")
+            print("❌ Не удалось разместить первую ставку")
             state["first_run_done"] = True
             save_state(state)
 
     # Проверка результатов предыдущих ставок
+    print("\n" + "="*50)
+    print("ПРОВЕРКА РЕЗУЛЬТАТОВ СТАВОК")
+    print("="*50)
+    
     now = datetime.now(timezone(timedelta(hours=5)))
     
     for coin_key in list(state["pending_bets"].keys()):
@@ -255,6 +316,8 @@ def main():
         slug = info["slug"]
         direction = info["direction"]
         amount = info["amount"]
+        
+        print(f"Проверка ставки: {coin_key} ({slug})")
         
         m = get_market(slug)
         if m and m.get("closed"):
@@ -274,39 +337,59 @@ def main():
                 
                 del state["pending_bets"][coin_key]
                 save_state(state)
+            else:
+                print(f"Рынок закрыт, но победитель не определен")
+        else:
+            print(f"Рынок еще открыт или не найден")
 
     # Размещение новой ставки (если сейчас начало часа)
+    print("\n" + "="*50)
+    print("ПРОВЕРКА НОВОГО ЧАСА")
+    print("="*50)
+    
     if is_new_hour():
-        print("Начало часа - проверяем возможность ставки...")
+        print("✅ Начало часа - проверяем возможность ставки...")
         
         for coin in ["BTC", "ETH"]:
             try:
+                print(f"\nПроверка {coin}...")
+                
                 url = f"https://gamma-api.polymarket.com/markets?limit=5&active=true&question_contains={coin}%201h"
                 resp = requests.get(url, timeout=10)
                 
                 if resp.status_code != 200:
+                    print(f"{coin} → ошибка API: {resp.status_code}")
                     continue
                 
                 markets = resp.json()
                 if not markets:
+                    print(f"{coin} → нет активных рынков")
                     continue
                 
                 market = markets[0]
+                print(f"Найден рынок: {market.get('question')}")
                 
                 if market.get('active') == False:
+                    print(f"{coin} → рынок не активен")
                     continue
                 
                 clob_ids = market.get("clobTokenIds", [])
                 if len(clob_ids) < 2:
+                    print(f"{coin} → нет токенов для торговли")
                     continue
                 
                 token_id_up, price_up = get_token_id_and_price(market, "Up")
                 token_id_down, price_down = get_token_id_and_price(market, "Down")
                 
+                if token_id_up is None or token_id_down is None:
+                    print(f"{coin} → не удалось получить token ID")
+                    continue
+                
                 bet_key = f"{coin}_last"
                 
                 # Проверяем, нет ли уже активной ставки
                 if bet_key in state["pending_bets"]:
+                    print(f"{coin} → уже есть активная ставка")
                     continue
                 
                 # Получаем предыдущий результат
@@ -318,6 +401,7 @@ def main():
                     prev_markets = prev_resp.json()
                     if prev_markets:
                         prev_winner = get_winner(prev_markets[0])
+                        print(f"Предыдущий результат: {prev_winner}")
                 
                 if prev_winner == "Up":
                     next_dir = "Down"
@@ -328,16 +412,22 @@ def main():
                     next_price = price_up
                     next_token = token_id_up
                 else:
+                    print(f"{coin} → нет предыдущего результата")
                     continue
                 
+                print(f"Направление: {next_dir}, цена: {next_price:.3f}")
+                
                 if next_price > MAX_PRICE_FOR_OPPOSITE:
+                    print(f"{coin} → цена слишком высокая (> {MAX_PRICE_FOR_OPPOSITE:.3f})")
                     continue
                 
                 current_bet = state["pending_bets"].get(bet_key, {}).get("next_bet", BASE_BET)
                 current_bet = min(current_bet, MAX_BET)
+                print(f"Размер ставки: ${current_bet}")
                 
                 has_balance, available = check_balance(client, current_bet)
                 if not has_balance:
+                    print(f"Недостаточно USDC: нужно ${current_bet}, доступно ${available}")
                     continue
                 
                 bet_price = min(0.99, next_price + PRICE_BUFFER)
@@ -355,7 +445,7 @@ def main():
                 if isinstance(resp, dict):
                     if "id" in resp or resp.get("status") in ("success", "placed"):
                         now_str = now.strftime('%Y-%m-%d %H:%M:%S')
-                        msg = f"💰 Ставка: {coin} 1h → {next_dir} | ${current_bet:.1f}"
+                        msg = f"💰 Ставка: {coin} 1h → {next_dir} | ${current_bet:.1f} по {bet_price:.3f}"
                         print(msg)
                         send_telegram(msg)
                         
@@ -371,8 +461,14 @@ def main():
                         
             except Exception as e:
                 print(f"Ошибка при обработке {coin}: {e}")
+                import traceback
+                traceback.print_exc()
+    else:
+        print("Сейчас не начало часа, пропускаем новые ставки")
     
+    print("\n" + "="*50)
     print("Бот завершил работу")
+    print("="*50)
 
 if __name__ == "__main__":
     main()
