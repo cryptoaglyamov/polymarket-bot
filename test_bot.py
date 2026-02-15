@@ -2,7 +2,6 @@ import os
 import time
 import json
 import requests
-import random
 from datetime import datetime, timezone, timedelta
 
 from py_clob_client.client import ClobClient
@@ -288,40 +287,39 @@ def find_current_interval_market(coin, minutes=15):
         
         print(f"\n=== Поиск {minutes}-минутного рынка для {coin} на {et_interval.hour}:{interval_start:02d} ET ===")
         
-        # Формируем slug для рынка
-        month = et_interval.strftime("%B").lower()
-        date = et_interval.day
-        hour = et_interval.hour
-        
-        ampm = "am" if hour < 12 else "pm"
-        hour_12 = hour if hour <= 12 else hour - 12
-        if hour_12 == 0:
-            hour_12 = 12
-            
-        minute_str = f"{interval_start:02d}"
-        
-        if coin == "BTC":
-            slug = f"btc-updown-15m-{month}-{date}-{hour_12}{ampm}-{minute_str}"
-        else:
-            slug = f"eth-updown-15m-{month}-{date}-{hour_12}{ampm}-{minute_str}"
-        
-        print(f"Ищем slug: {slug}")
-        
-        url = f"https://gamma-api.polymarket.com/markets?slug={slug}"
+        # Получаем все активные рынки
+        url = f"https://gamma-api.polymarket.com/markets?limit=100&active=true"
         resp = requests.get(url, timeout=10)
         
         if resp.status_code == 200:
             markets = resp.json()
-            if markets:
-                market = markets[0]
-                prices = parse_prices(market.get('outcomePrices', ['0.5', '0.5']))
-                resolved = is_market_resolved(market)
-                print(f"✅ Найден {minutes}-минутный рынок: {market.get('question')}")
-                print(f"   Цены: {prices}")
-                print(f"   Разрешен: {resolved}")
-                return market
+            
+            # Формируем строку для поиска
+            month = et_interval.strftime("%B")
+            day = et_interval.day
+            hour = et_interval.hour
+            minute = interval_start
+            
+            # Определяем AM/PM для часов
+            ampm = "AM" if hour < 12 else "PM"
+            hour_12 = hour if hour <= 12 else hour - 12
+            if hour_12 == 0:
+                hour_12 = 12
+            
+            time_str = f"{month} {day}, {hour_12}:{minute:02d} {ampm}"
+            
+            # Ищем подходящий рынок
+            for market in markets:
+                question = market.get('question', '')
+                if coin in question and f"{minutes} min" in question.lower() and time_str in question:
+                    prices = parse_prices(market.get('outcomePrices', ['0.5', '0.5']))
+                    resolved = is_market_resolved(market)
+                    print(f"✅ Найден {minutes}-минутный рынок: {question}")
+                    print(f"   Цены: {prices}")
+                    print(f"   Разрешен: {resolved}")
+                    return market
         
-        print(f"❌ {minutes}-минутный рынок для {hour}:{interval_start:02d} не найден")
+        print(f"❌ {minutes}-минутный рынок для {hour_12}:{minute:02d} {ampm} не найден")
         return None
         
     except Exception as e:
@@ -351,35 +349,37 @@ def get_previous_interval_market(coin, minutes=15):
         
         print(f"\n=== Поиск предыдущего {minutes}-минутного рынка для {coin} на {prev_hour}:{prev_interval_start:02d} ET ===")
         
-        month = et_now.strftime("%B").lower()
-        
-        ampm = "am" if prev_hour < 12 else "pm"
-        hour_12 = prev_hour if prev_hour <= 12 else prev_hour - 12
-        if hour_12 == 0:
-            hour_12 = 12
-            
-        minute_str = f"{prev_interval_start:02d}"
-        
-        if coin == "BTC":
-            slug = f"btc-updown-15m-{month}-{prev_date}-{hour_12}{ampm}-{minute_str}"
-        else:
-            slug = f"eth-updown-15m-{month}-{prev_date}-{hour_12}{ampm}-{minute_str}"
-        
-        print(f"Ищем slug: {slug}")
-        
-        url = f"https://gamma-api.polymarket.com/markets?slug={slug}"
+        # Получаем все рынки (включая закрытые)
+        url = f"https://gamma-api.polymarket.com/markets?limit=100&active=true"
         resp = requests.get(url, timeout=10)
         
         if resp.status_code == 200:
             markets = resp.json()
-            if markets:
-                market = markets[0]
-                prices = parse_prices(market.get('outcomePrices', ['0.5', '0.5']))
-                resolved = is_market_resolved(market)
-                print(f"✅ Найден предыдущий рынок: {market.get('question')}")
-                print(f"   Цены: {prices}")
-                print(f"   Разрешен: {resolved}")
-                return market
+            
+            # Формируем строку для поиска
+            month = et_now.strftime("%B")
+            day = prev_date
+            hour = prev_hour
+            minute = prev_interval_start
+            
+            # Определяем AM/PM для часов
+            ampm = "AM" if hour < 12 else "PM"
+            hour_12 = hour if hour <= 12 else hour - 12
+            if hour_12 == 0:
+                hour_12 = 12
+            
+            time_str = f"{month} {day}, {hour_12}:{minute:02d} {ampm}"
+            
+            # Ищем подходящий рынок
+            for market in markets:
+                question = market.get('question', '')
+                if coin in question and f"{minutes} min" in question.lower() and time_str in question:
+                    prices = parse_prices(market.get('outcomePrices', ['0.5', '0.5']))
+                    resolved = is_market_resolved(market)
+                    print(f"✅ Найден предыдущий рынок: {question}")
+                    print(f"   Цены: {prices}")
+                    print(f"   Разрешен: {resolved}")
+                    return market
         
         print(f"❌ Предыдущий рынок не найден")
         return None
