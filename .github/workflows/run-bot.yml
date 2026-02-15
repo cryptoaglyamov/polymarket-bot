@@ -2,6 +2,8 @@ name: Run Polymarket Bot
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: '*/15 * * * *'  # Запуск каждые 15 минут
 
 jobs:
   run-bot:
@@ -13,56 +15,26 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v3
       
-    - name: Test proxy with simple curl
-      run: |
-        echo "=== ТЕСТ ПРОСТОГО ПРОКСИ ==="
-        
-        # Пробуем самый простой публичный прокси
-        PROXY="68.183.141.128:3128"
-        
-        echo "Тестируем прокси: $PROXY"
-        echo ""
-        
-        # Простая проверка без таймаутов
-        echo "1. Пытаемся получить IP через прокси:"
-        curl -x http://$PROXY -s --max-time 5 https://api.ipify.org || echo "❌ Не удалось"
-        echo ""
-        
-        echo "=== ТЕСТ ЗАВЕРШЕН ==="
-        
-    - name: Set up proxy environment (если нужно)
-      if: false
-      run: |
-        echo "HTTP_PROXY=http://68.183.141.128:3128" >> $GITHUB_ENV
-        echo "HTTPS_PROXY=http://68.183.141.128:3128" >> $GITHUB_ENV
-        echo "http_proxy=http://68.183.141.128:3128" >> $GITHUB_ENV
-        echo "https_proxy=http://68.183.141.128:3128" >> $GITHUB_ENV
-        echo "NO_PROXY=localhost,127.0.0.1" >> $GITHUB_ENV
-        
     - name: Set up Python
-      if: false
       uses: actions/setup-python@v4
       with:
         python-version: '3.10'
         
     - name: Install dependencies
-      if: false
       run: |
         pip install -r requirements.txt
         
-    - name: Run bot
-      if: false
+    - name: Run test bot
       env:
         PRIVATE_KEY: ${{ secrets.PRIVATE_KEY }}
         TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
         TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-      run: python bot.py
+      run: python test_bot.py
       
     - name: Save state file
-      if: false
       run: |
         git config --local user.email "action@github.com"
         git config --local user.name "GitHub Action"
-        git add bot_state.json
-        git diff --quiet && git diff --staged --quiet || git commit -m "Update bot state [skip ci]"
+        git add test_bot_state.json
+        git diff --quiet && git diff --staged --quiet || git commit -m "Update test bot state [skip ci]"
         git push
