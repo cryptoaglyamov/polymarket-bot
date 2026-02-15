@@ -2,6 +2,8 @@ name: Run Polymarket Bot
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: '*/10 * * * *'
 
 jobs:
   run-bot:
@@ -13,17 +15,29 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v3
       
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.10'
-        
     - name: Set up proxy environment
       run: |
         echo "HTTP_PROXY=http://147.185.221.23:21506" >> $GITHUB_ENV
         echo "HTTPS_PROXY=http://147.185.221.23:21506" >> $GITHUB_ENV
         echo "http_proxy=http://147.185.221.23:21506" >> $GITHUB_ENV
         echo "https_proxy=http://147.185.221.23:21506" >> $GITHUB_ENV
+        echo "NO_PROXY=localhost,127.0.0.1" >> $GITHUB_ENV
+        
+    - name: Test proxy connection
+      run: |
+        echo "=== ТЕСТ ПРОКСИ ==="
+        echo "Проверяем подключение к Polymarket через прокси..."
+        curl -v -I https://clob.polymarket.com
+        echo ""
+        echo "Проверяем внешний IP через прокси:"
+        curl -v https://api.ipify.org
+        echo ""
+        echo "=== ТЕСТ ЗАВЕРШЕН ==="
+        
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
         
     - name: Install dependencies
       run: |
@@ -34,6 +48,10 @@ jobs:
         PRIVATE_KEY: ${{ secrets.PRIVATE_KEY }}
         TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
         TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        HTTP_PROXY: http://147.185.221.23:21506
+        HTTPS_PROXY: http://147.185.221.23:21506
+        http_proxy: http://147.185.221.23:21506
+        https_proxy: http://147.185.221.23:21506
       run: python bot.py
       
     - name: Save state file
