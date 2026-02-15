@@ -1,7 +1,7 @@
 name: Run Polymarket Bot
 
 on:
-  workflow_dispatch:  # Только ручной/API запуск
+  workflow_dispatch:
 
 jobs:
   run-bot:
@@ -13,42 +13,55 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v3
       
-    - name: Set up proxy environment
+    - name: Test Asia proxy
       run: |
-        echo "HTTP_PROXY=http://147.185.221.23:21506" >> $GITHUB_ENV
-        echo "HTTPS_PROXY=http://147.185.221.23:21506" >> $GITHUB_ENV
-        echo "http_proxy=http://147.185.221.23:21506" >> $GITHUB_ENV
-        echo "https_proxy=http://147.185.221.23:21506" >> $GITHUB_ENV
-        echo "NO_PROXY=localhost,127.0.0.1" >> $GITHUB_ENV
+        echo "=== ТЕСТ АЗИАТСКОГО ПРОКСИ ==="
         
-    - name: Test proxy connection
-      run: |
-        echo "=== ТЕСТ ПРОКСИ ==="
-        echo "Проверяем подключение к Polymarket через прокси..."
-        curl -v -I https://clob.polymarket.com
+        # Прокси из Сингапура
+        PROXY="139.59.125.125:8080"
+        echo "Тестируем прокси: $PROXY"
         echo ""
-        echo "Проверяем внешний IP через прокси:"
-        curl -v https://api.ipify.org
+        
+        echo "1. Проверка доступности прокси:"
+        timeout 10 nc -zv ${PROXY/:/ } 2>&1 || echo "❌ Прокси недоступен"
         echo ""
+        
+        echo "2. Проверка внешнего IP через прокси:"
+        curl -v -x http://$PROXY https://api.ipify.org 2>&1 | grep -E "Connected to|HTTP|Our IP|^[0-9]"
+        echo ""
+        
+        echo "3. Проверка подключения к Polymarket:"
+        curl -v -I -x http://$PROXY https://clob.polymarket.com 2>&1 | grep -E "Connected|HTTP"
+        echo ""
+        
         echo "=== ТЕСТ ЗАВЕРШЕН ==="
         
     - name: Set up Python
+      if: success()
       uses: actions/setup-python@v4
       with:
         python-version: '3.10'
         
     - name: Install dependencies
+      if: success()
       run: |
         pip install -r requirements.txt
         
     - name: Run bot
+      if: success()
       env:
         PRIVATE_KEY: ${{ secrets.PRIVATE_KEY }}
         TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
         TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        HTTP_PROXY: http://139.59.125.125:8080
+        HTTPS_PROXY: http://139.59.125.125:8080
+        http_proxy: http://139.59.125.125:8080
+        https_proxy: http://139.59.125.125:8080
+        NO_PROXY: localhost,127.0.0.1
       run: python bot.py
       
     - name: Save state file
+      if: success()
       run: |
         git config --local user.email "action@github.com"
         git config --local user.name "GitHub Action"
