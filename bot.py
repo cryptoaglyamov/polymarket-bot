@@ -58,10 +58,8 @@ def load_state():
             data = json.load(f)
             if "pending_bets" not in data:
                 data["pending_bets"] = {}
-            if "first_run_done" not in data:
-                data["first_run_done"] = False
             return data
-    return {"pending_bets": {}, "first_run_done": False}
+    return {"pending_bets": {}}
 
 def save_state(state):
     with open(STATE_FILE, "w") as f:
@@ -175,7 +173,7 @@ def check_balance(client):
         
     except Exception as e:
         print(f"Ошибка проверки баланса: {e}")
-        return 100.0  # Возвращаем 100 для теста
+        return 100.0
 
 def find_btc_eth_markets():
     """
@@ -237,67 +235,50 @@ def find_btc_eth_markets():
             month = today.strftime("%B").lower()
             day = today.day
             
-            # Пробуем разные варианты slug для BTC
-            btc_slugs = [
-                f"bitcoin-up-or-down-{month}-{day}-7am-et",
-                f"bitcoin-up-or-down-{month}-{day}-8am-et",
-                f"bitcoin-up-or-down-{month}-{day}-9am-et",
-                f"bitcoin-up-or-down-{month}-{day}-10am-et",
-                f"bitcoin-up-or-down-{month}-{day}-11am-et",
-                f"bitcoin-up-or-down-{month}-{day}-12pm-et",
-                f"bitcoin-up-or-down-{month}-{day}-1pm-et",
-                f"bitcoin-up-or-down-{month}-{day}-2pm-et",
-                f"bitcoin-up-or-down-{month}-{day}-3pm-et",
-                f"bitcoin-up-or-down-{month}-{day}-4pm-et",
-                f"bitcoin-up-or-down-{month}-{day}-5pm-et",
-                f"bitcoin-up-or-down-{month}-{day}-6pm-et",
-                f"bitcoin-up-or-down-{month}-{day}-7pm-et",
-                f"bitcoin-up-or-down-{month}-{day}-8pm-et",
-            ]
-            
-            for slug in btc_slugs:
+            # Пробуем разные варианты slug для BTC (на сегодня)
+            for hour in range(0, 24):
+                ampm = "am" if hour < 12 else "pm"
+                hour_12 = hour if hour <= 12 else hour - 12
+                if hour_12 == 0:
+                    hour_12 = 12
+                    
+                slug = f"bitcoin-up-or-down-{month}-{day}-{hour_12}{ampm}-et"
                 url = f"https://gamma-api.polymarket.com/markets?slug={slug}"
-                resp = requests.get(url, timeout=5)
-                if resp.status_code == 200:
-                    markets = resp.json()
-                    if markets:
-                        print(f"✅ Найден BTC рынок по slug: {slug}")
-                        found_markets["BTC"] = markets[0]
-                        break
+                try:
+                    resp = requests.get(url, timeout=5)
+                    if resp.status_code == 200:
+                        markets_data = resp.json()
+                        if markets_data:
+                            print(f"✅ Найден BTC рынок: {slug}")
+                            found_markets["BTC"] = markets_data[0]
+                            break
+                except:
+                    continue
         
         if found_markets["ETH"] is None:
             print("\n🔍 Ищем ETH через точные slug...")
-            # Аналогично для ETH
             today = datetime.now()
             month = today.strftime("%B").lower()
             day = today.day
             
-            eth_slugs = [
-                f"ethereum-up-or-down-{month}-{day}-7am-et",
-                f"ethereum-up-or-down-{month}-{day}-8am-et",
-                f"ethereum-up-or-down-{month}-{day}-9am-et",
-                f"ethereum-up-or-down-{month}-{day}-10am-et",
-                f"ethereum-up-or-down-{month}-{day}-11am-et",
-                f"ethereum-up-or-down-{month}-{day}-12pm-et",
-                f"ethereum-up-or-down-{month}-{day}-1pm-et",
-                f"ethereum-up-or-down-{month}-{day}-2pm-et",
-                f"ethereum-up-or-down-{month}-{day}-3pm-et",
-                f"ethereum-up-or-down-{month}-{day}-4pm-et",
-                f"ethereum-up-or-down-{month}-{day}-5pm-et",
-                f"ethereum-up-or-down-{month}-{day}-6pm-et",
-                f"ethereum-up-or-down-{month}-{day}-7pm-et",
-                f"ethereum-up-or-down-{month}-{day}-8pm-et",
-            ]
-            
-            for slug in eth_slugs:
+            for hour in range(0, 24):
+                ampm = "am" if hour < 12 else "pm"
+                hour_12 = hour if hour <= 12 else hour - 12
+                if hour_12 == 0:
+                    hour_12 = 12
+                    
+                slug = f"ethereum-up-or-down-{month}-{day}-{hour_12}{ampm}-et"
                 url = f"https://gamma-api.polymarket.com/markets?slug={slug}"
-                resp = requests.get(url, timeout=5)
-                if resp.status_code == 200:
-                    markets = resp.json()
-                    if markets:
-                        print(f"✅ Найден ETH рынок по slug: {slug}")
-                        found_markets["ETH"] = markets[0]
-                        break
+                try:
+                    resp = requests.get(url, timeout=5)
+                    if resp.status_code == 200:
+                        markets_data = resp.json()
+                        if markets_data:
+                            print(f"✅ Найден ETH рынок: {slug}")
+                            found_markets["ETH"] = markets_data[0]
+                            break
+                except:
+                    continue
         
         print("\n=== ИТОГИ ПОИСКА ===")
         print(f"BTC рынок: {'НАЙДЕН' if found_markets['BTC'] else 'НЕ НАЙДЕН'}")
@@ -311,20 +292,79 @@ def find_btc_eth_markets():
         traceback.print_exc()
         return {"BTC": None, "ETH": None}
 
-def place_initial_down_bet(client, coin, market, state):
-    """Размещает первую ставку на Down на конкретном рынке"""
+def get_previous_hour_result(coin):
+    """Получает результат предыдущего закрытого часа для монеты"""
     try:
-        print(f"\n=== Размещаем первую ставку {coin} DOWN ===")
+        print(f"\n=== Получение результата предыдущего часа для {coin} ===")
+        
+        # Определяем время предыдущего часа
+        now_utc5 = datetime.now(timezone(timedelta(hours=5)))
+        et_now = now_utc5 - timedelta(hours=10)  # Конвертируем в ET
+        
+        # Берем предыдущий час
+        prev_hour_et = et_now.hour - 1
+        prev_date = et_now.day
+        
+        if prev_hour_et < 0:
+            prev_hour_et = 23
+            prev_date = et_now.day - 1  # Вчерашний день
+        
+        # Формируем slug для предыдущего часа
+        month = et_now.strftime("%B").lower()
+        ampm = "am" if prev_hour_et < 12 else "pm"
+        hour_12 = prev_hour_et if prev_hour_et <= 12 else prev_hour_et - 12
+        if hour_12 == 0:
+            hour_12 = 12
+        
+        if coin == "BTC":
+            slug = f"bitcoin-up-or-down-{month}-{prev_date}-{hour_12}{ampm}-et"
+        else:  # ETH
+            slug = f"ethereum-up-or-down-{month}-{prev_date}-{hour_12}{ampm}-et"
+        
+        print(f"Ищем рынок: {slug}")
+        
+        # Получаем рынок
+        url = f"https://gamma-api.polymarket.com/markets?slug={slug}"
+        resp = requests.get(url, timeout=10)
+        
+        if resp.status_code != 200:
+            print(f"Ошибка получения рынка: {resp.status_code}")
+            return None
+        
+        markets = resp.json()
+        if not markets:
+            print(f"Рынок не найден")
+            return None
+        
+        market = markets[0]
+        
+        # Проверяем, закрыт ли рынок
+        if not market.get("closed"):
+            print(f"Рынок еще не закрыт")
+            return None
+        
+        # Получаем победителя
+        winner = get_winner(market)
+        
+        if winner:
+            print(f"✅ Результат {coin} {prev_hour_et}:00 ET: {winner}")
+            return winner
+        else:
+            print(f"Не удалось определить победителя")
+            return None
+            
+    except Exception as e:
+        print(f"Ошибка получения результата предыдущего часа: {e}")
+        return None
+
+def place_bet(client, coin, market, direction, bet_amount):
+    """Размещает ставку на рынке"""
+    try:
+        print(f"\n=== Размещаем ставку {coin} {direction} ===")
         
         if not market:
             print(f"{coin} → рынок не передан")
             return False
-        
-        print(f"Рынок: {market.get('question')}")
-        print(f"Цены: {market.get('outcomePrices')}")
-        print(f"Токены: {market.get('clobTokenIds')}")
-        print(f"Активен: {market.get('active')}")
-        print(f"Закрыт: {market.get('closed')}")
         
         # Проверяем, что рынок открыт
         if market.get('closed') == True:
@@ -336,37 +376,36 @@ def place_initial_down_bet(client, coin, market, state):
             print(f"{coin} → нет токенов для торговли")
             return False
         
-        # Получаем данные для Down
-        token_id_down, price_down = get_token_id_and_price(market, "Down")
+        # Получаем данные для нужного направления
+        token_id, price = get_token_id_and_price(market, direction)
         
-        if token_id_down is None:
-            print(f"{coin} → не удалось получить token ID для Down")
+        if token_id is None:
+            print(f"{coin} → не удалось получить token ID для {direction}")
             return False
         
-        print(f"Down цена: {price_down:.3f}, токен ID: {token_id_down}")
+        print(f"{direction} цена: {price:.3f}, токен ID: {token_id}")
         
-        if price_down > MAX_PRICE_FOR_OPPOSITE:
-            print(f"{coin} Down по {price_down:.3f} → коэффициент мал (< {MIN_MULTIPLIER}), пропускаем")
+        if price > MAX_PRICE_FOR_OPPOSITE and direction == "Down":
+            print(f"Цена слишком высокая, коэффициент мал, пропускаем")
             return False
         
         # Проверяем баланс
         available_balance = check_balance(client)
         print(f"Доступный баланс: ${available_balance}")
         
-        if available_balance < BASE_BET:
-            print(f"Недостаточно USDC: нужно ${BASE_BET}, доступно ${available_balance}")
+        if available_balance < bet_amount:
+            print(f"Недостаточно USDC: нужно ${bet_amount}, доступно ${available_balance}")
             return False
         
-        bet_price = min(0.99, price_down + PRICE_BUFFER)
-        bet_key = f"{coin}_last"
+        bet_price = min(0.99, price + PRICE_BUFFER)
         
-        print(f"Пытаемся разместить ордер: {coin} Down, цена {bet_price:.3f}, размер ${BASE_BET}")
+        print(f"Пытаемся разместить ордер: {coin} {direction}, цена {bet_price:.3f}, размер ${bet_amount}")
         
         order_args = OrderArgs(
-            token_id=token_id_down,
+            token_id=token_id,
             side=BUY,
             price=bet_price,
-            size=BASE_BET
+            size=bet_amount
         )
         
         signed = client.create_order(order_args)
@@ -377,183 +416,17 @@ def place_initial_down_bet(client, coin, market, state):
         if isinstance(resp, dict):
             if "id" in resp or resp.get("status") in ("success", "placed"):
                 now_str = datetime.now(timezone(timedelta(hours=5))).strftime('%Y-%m-%d %H:%M:%S')
-                msg = f"🎯 ПЕРВАЯ СТАВКА: {coin} 1h → Down | ${BASE_BET:.1f} по {bet_price:.3f}"
-                print(msg)
-                send_telegram(msg)
-                
-                state["pending_bets"][bet_key] = {
-                    "slug": market["slug"],
-                    "direction": "Down",
-                    "amount": BASE_BET,
-                    "price": bet_price,
-                    "placed_at": now_str,
-                    "next_bet": BASE_BET
-                }
-                save_state(state)
-                return True
+                return True, resp.get("id")
             else:
-                print(f"{coin} ошибка при первой ставке: {resp}")
-        return False
-        
-    except Exception as e:
-        print(f"Ошибка при размещении первой ставки: {e}")
-        import traceback
-        traceback.print_exc()
-        return False
-
-def place_hourly_bet(client, coin, market, state, prev_winner):
-    """Размещает ставку по стратегии (противоположно предыдущему исходу)"""
-    try:
-        print(f"\n=== Размещаем ставку {coin} ===")
-        
-        if not market:
-            print(f"{coin} → рынок не передан")
-            return False
-        
-        print(f"Рынок: {market.get('question')}")
-        print(f"Цены: {market.get('outcomePrices')}")
-        
-        # Проверяем, что рынок открыт
-        if market.get('closed') == True:
-            print(f"{coin} → рынок закрыт")
-            return False
-        
-        clob_ids = market.get("clobTokenIds", [])
-        if len(clob_ids) < 2:
-            print(f"{coin} → нет токенов для торговли")
-            return False
-        
-        token_id_up, price_up = get_token_id_and_price(market, "Up")
-        token_id_down, price_down = get_token_id_and_price(market, "Down")
-        
-        if token_id_up is None or token_id_down is None:
-            print(f"{coin} → не удалось получить token ID")
-            return False
-        
-        bet_key = f"{coin}_last"
-        
-        # Проверяем, нет ли уже активной ставки
-        if bet_key in state["pending_bets"]:
-            print(f"{coin} → уже есть активная ставка")
-            return False
-        
-        # Определяем направление по стратегии (противоположно предыдущему)
-        if prev_winner == "Up":
-            next_dir = "Down"
-            next_price = price_down
-            next_token = token_id_down
-        elif prev_winner == "Down":
-            next_dir = "Up"
-            next_price = price_up
-            next_token = token_id_up
-        else:
-            print(f"{coin} → нет предыдущего результата")
-            return False
-        
-        print(f"Направление: {next_dir}, цена: {next_price:.3f}")
-        
-        if next_price > MAX_PRICE_FOR_OPPOSITE:
-            print(f"{coin} → цена слишком высокая (> {MAX_PRICE_FOR_OPPOSITE:.3f})")
-            return False
-        
-        current_bet = state["pending_bets"].get(bet_key, {}).get("next_bet", BASE_BET)
-        current_bet = min(current_bet, MAX_BET)
-        print(f"Размер ставки: ${current_bet}")
-        
-        available_balance = check_balance(client)
-        if available_balance < current_bet:
-            print(f"Недостаточно USDC: нужно ${current_bet}, доступно ${available_balance}")
-            return False
-        
-        bet_price = min(0.99, next_price + PRICE_BUFFER)
-        
-        order_args = OrderArgs(
-            token_id=next_token,
-            side=BUY,
-            price=bet_price,
-            size=current_bet
-        )
-        
-        signed = client.create_order(order_args)
-        resp = client.post_order(signed, OrderType.GTC)
-        
-        print(f"Ответ от биржи: {resp}")
-        
-        if isinstance(resp, dict):
-            if "id" in resp or resp.get("status") in ("success", "placed"):
-                now_str = datetime.now(timezone(timedelta(hours=5))).strftime('%Y-%m-%d %H:%M:%S')
-                msg = f"💰 Ставка: {coin} 1h → {next_dir} | ${current_bet:.1f} по {bet_price:.3f}"
-                print(msg)
-                send_telegram(msg)
-                
-                state["pending_bets"][bet_key] = {
-                    "slug": market["slug"],
-                    "direction": next_dir,
-                    "amount": current_bet,
-                    "price": bet_price,
-                    "placed_at": now_str,
-                    "next_bet": BASE_BET
-                }
-                save_state(state)
-                return True
-            else:
-                print(f"{coin} ошибка при ставке: {resp}")
-        return False
+                print(f"Ошибка при ставке: {resp}")
+                return False, None
+        return False, None
         
     except Exception as e:
         print(f"Ошибка при размещении ставки: {e}")
         import traceback
         traceback.print_exc()
-        return False
-
-def get_previous_winner(coin):
-    """Получает результат предыдущего закрытого рынка для монеты"""
-    try:
-        # Ищем закрытые рынки за сегодня
-        today = datetime.now()
-        month = today.strftime("%B").lower()
-        day = today.day
-        
-        # Пробуем найти предыдущий час
-        current_hour_et = (datetime.now(timezone(timedelta(hours=5))) - timedelta(hours=10)).hour
-        
-        # Проверяем предыдущий час
-        prev_hour = current_hour_et - 1
-        if prev_hour < 0:
-            prev_hour = 23
-        
-        # Определяем AM/PM
-        ampm = "am" if prev_hour < 12 else "pm"
-        hour_12 = prev_hour if prev_hour <= 12 else prev_hour - 12
-        if hour_12 == 0:
-            hour_12 = 12
-        
-        # Формируем slug для предыдущего часа
-        if coin == "BTC":
-            slug = f"bitcoin-up-or-down-{month}-{day}-{hour_12}{ampm}-et"
-        else:  # ETH
-            slug = f"ethereum-up-or-down-{month}-{day}-{hour_12}{ampm}-et"
-        
-        print(f"Ищем предыдущий рынок: {slug}")
-        
-        url = f"https://gamma-api.polymarket.com/markets?slug={slug}"
-        resp = requests.get(url, timeout=10)
-        
-        if resp.status_code == 200:
-            markets = resp.json()
-            if markets:
-                market = markets[0]
-                if market.get("closed"):
-                    winner = get_winner(market)
-                    print(f"Предыдущий рынок {coin} закрыт, победитель: {winner}")
-                    return winner
-                else:
-                    print(f"Предыдущий рынок {coin} еще открыт")
-        
-        return None
-    except Exception as e:
-        print(f"Ошибка получения предыдущего результата: {e}")
-        return None
+        return False, None
 
 # ========== ГЛАВНАЯ ФУНКЦИЯ ==========
 
@@ -594,25 +467,6 @@ def main():
     # Находим все BTC и ETH рынки
     markets = find_btc_eth_markets()
     
-    # Первая ставка при запуске (если еще не делали)
-    if not state.get("first_run_done", False):
-        print("\n" + "="*50)
-        print("ПЕРВЫЙ ЗАПУСК - пробуем поставить на DOWN...")
-        print("="*50)
-        
-        # Пробуем BTC
-        if markets["BTC"] and place_initial_down_bet(client, "BTC", markets["BTC"], state):
-            state["first_run_done"] = True
-            save_state(state)
-            print("✅ Первая ставка на BTC Down размещена!")
-        # Если BTC не получилось, пробуем ETH
-        elif markets["ETH"] and place_initial_down_bet(client, "ETH", markets["ETH"], state):
-            state["first_run_done"] = True
-            save_state(state)
-            print("✅ Первая ставка на ETH Down размещена!")
-        else:
-            print("❌ Не удалось разместить первую ставку")
-
     # Проверка результатов предыдущих ставок
     print("\n" + "="*50)
     print("ПРОВЕРКА РЕЗУЛЬТАТОВ СТАВОК")
@@ -651,6 +505,22 @@ def main():
         else:
             print(f"Рынок еще открыт или не найден")
 
+    # Получаем результаты предыдущего часа (просто для информации)
+    print("\n" + "="*50)
+    print("РЕЗУЛЬТАТЫ ПРЕДЫДУЩЕГО ЧАСА")
+    print("="*50)
+    
+    btc_prev = get_previous_hour_result("BTC")
+    eth_prev = get_previous_hour_result("ETH")
+    
+    if btc_prev or eth_prev:
+        msg = "📊 Результаты предыдущего часа:\n"
+        if btc_prev:
+            msg += f"BTC: {btc_prev}\n"
+        if eth_prev:
+            msg += f"ETH: {eth_prev}"
+        send_telegram(msg)
+
     # Размещение новой ставки (если сейчас начало часа)
     print("\n" + "="*50)
     print("ПРОВЕРКА НОВОГО ЧАСА")
@@ -659,20 +529,46 @@ def main():
     if is_new_hour():
         print("✅ Начало часа - проверяем возможность ставки...")
         
-        # Для каждого монетного рынка, который мы нашли
+        # Для каждого монетного рынка
         for coin in ["BTC", "ETH"]:
             if not markets[coin]:
                 print(f"{coin} → рынок не найден, пропускаем")
                 continue
             
-            # Получаем результат предыдущего часа
-            prev_winner = get_previous_winner(coin)
+            # Получаем результат предыдущего часа для определения стратегии
+            prev_winner = get_previous_hour_result(coin)
             
-            if prev_winner:
-                # Размещаем ставку по стратегии
-                place_hourly_bet(client, coin, markets[coin], state, prev_winner)
-            else:
-                print(f"{coin} → нет информации о предыдущем результате")
+            if not prev_winner:
+                print(f"{coin} → нет информации о предыдущем результате, пропускаем")
+                continue
+            
+            # Определяем следующее направление (противоположно предыдущему)
+            next_dir = "Down" if prev_winner == "Up" else "Up"
+            
+            # Получаем размер следующей ставки из истории
+            bet_key = f"{coin}_last"
+            next_bet = state["pending_bets"].get(bet_key, {}).get("next_bet", BASE_BET)
+            next_bet = min(next_bet, MAX_BET)
+            
+            # Размещаем ставку
+            success, order_id = place_bet(client, coin, markets[coin], next_dir, next_bet)
+            
+            if success:
+                now_str = now.strftime('%Y-%m-%d %H:%M:%S')
+                msg = f"💰 Ставка: {coin} 1h → {next_dir} | ${next_bet:.1f}"
+                print(msg)
+                send_telegram(msg)
+                
+                # Сохраняем информацию о ставке
+                state["pending_bets"][bet_key] = {
+                    "slug": markets[coin]["slug"],
+                    "direction": next_dir,
+                    "amount": next_bet,
+                    "price": 0,  # Цену нужно получить из ответа
+                    "placed_at": now_str,
+                    "next_bet": BASE_BET  # Сбрасываем для следующего раза
+                }
+                save_state(state)
     else:
         current_minute = datetime.now(timezone(timedelta(hours=5))).minute
         print(f"Сейчас {current_minute} минут, ждем 00 минут для новых ставок")
