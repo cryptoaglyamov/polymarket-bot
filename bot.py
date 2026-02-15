@@ -61,12 +61,93 @@ def load_state():
             data = json.load(f)
             if "pending_bets" not in data:
                 data["pending_bets"] = {}
+            if "statistics" not in data:
+                data["statistics"] = {
+                    "total_profit": 0.0,
+                    "total_bets": 0,
+                    "wins": 0,
+                    "losses": 0,
+                    "history": [],
+                    "last_reset_date": datetime.now().strftime('%Y-%m-%d')
+                }
             return data
-    return {"pending_bets": {}}
+    return {
+        "pending_bets": {},
+        "statistics": {
+            "total_profit": 0.0,
+            "total_bets": 0,
+            "wins": 0,
+            "losses": 0,
+            "history": [],
+            "last_reset_date": datetime.now().strftime('%Y-%m-%d')
+        }
+    }
 
 def save_state(state):
     with open(STATE_FILE, "w") as f:
         json.dump(state, f, indent=2)
+
+def update_statistics(state, coin, result, profit, bet_amount):
+    """Обновляет статистику после завершения ставки"""
+    stats = state["statistics"]
+    
+    # Добавляем в историю
+    stats["history"].append({
+        "timestamp": datetime.now().isoformat(),
+        "coin": coin,
+        "result": result,
+        "profit": profit,
+        "bet_amount": bet_amount
+    })
+    
+    # Обновляем общую статистику
+    stats["total_bets"] += 1
+    stats["total_profit"] += profit
+    
+    if profit > 0:
+        stats["wins"] += 1
+    else:
+        stats["losses"] += 1
+    
+    # Ограничиваем историю последними 100 записями
+    if len(stats["history"]) > 100:
+        stats["history"] = stats["history"][-100:]
+    
+    save_state(state)
+
+def get_daily_statistics(state):
+    """Получает статистику за последние 24 часа"""
+    stats = state["statistics"]
+    now = datetime.now()
+    day_ago = now - timedelta(hours=24)
+    
+    daily_profit = 0
+    daily_bets = 0
+    daily_wins = 0
+    
+    for entry in stats["history"]:
+        entry_time = datetime.fromisoformat(entry["timestamp"])
+        if entry_time > day_ago:
+            daily_profit += entry["profit"]
+            daily_bets += 1
+            if entry["profit"] > 0:
+                daily_wins += 1
+    
+    daily_losses = daily_bets - daily_wins
+    win_rate = (daily_wins / daily_bets * 100) if daily_bets > 0 else 0
+    
+    return {
+        "profit": daily_profit,
+        "bets": daily_bets,
+        "wins": daily_wins,
+        "losses": daily_losses,
+        "win_rate": win_rate
+    }
+
+def check_midnight():
+    """Проверяет, наступила ли полночь по UTC+5"""
+    now = datetime.now(timezone(timedelta(hours=5)))
+    return now.hour == 0 and now.minute == 0 and now.second < 10
 
 # ========== ФУНКЦИИ ДЛЯ РАБОТЫ С POLYMARKET ==========
 
@@ -86,33 +167,20 @@ def get_market(slug: str):
         return None
 
 def parse_prices(prices_field):
-    """
-    Правильный парсинг цен из API.
-    Может принимать разные форматы:
-    - ["0.5", "0.5"] - массив строк
-    - "[\"0.0005\", \"0.9995\"]" - строка JSON
-    - [0.5, 0.5] - массив чисел
-    """
+    """Правильный парсинг цен из API"""
     try:
-        # Если это строка - парсим JSON
         if isinstance(prices_field, str):
             try:
-                # Убираем экранирование если есть
                 prices_str = prices_field.replace('\\"', '"')
-                # Парсим JSON
                 prices_list = json.loads(prices_str)
-                # Конвертируем в float
                 return [float(p) for p in prices_list]
             except:
-                # Если не получилось, пробуем просто разделить по запятой
                 import re
                 numbers = re.findall(r"[\d.]+", prices_field)
                 return [float(n) for n in numbers[:2]]
-        
-        # Если это список
         elif isinstance(prices_field, list):
             prices = []
-            for p in prices_field[:2]:  # берем только первые 2
+            for p in prices_field[:2]:
                 if isinstance(p, str):
                     try:
                         prices.append(float(p))
@@ -123,29 +191,21 @@ def parse_prices(prices_field):
                 else:
                     prices.append(0.5)
             return prices
-        
-        # Если ничего не подошло
         return [0.5, 0.5]
-        
     except Exception as e:
         print(f"Ошибка парсинга цен: {e}")
         return [0.5, 0.5]
 
 def is_market_resolved(market):
-    """
-    Определяет, разрешен ли рынок (закрыт) по цене
-    Возвращает True если цена одного из исходов >= 0.85
-    """
+    """Определяет, разрешен ли рынок по цене >= 0.85"""
     if not market:
         return False
     
     prices = parse_prices(market.get("outcomePrices", ["0.5", "0.5"]))
     
-    # Если одна из цен достигла 0.85 или выше - рынок разрешен
     if prices[0] >= 0.85 or prices[1] >= 0.85:
         return True
     
-    # Также проверяем статус UMA
     uma_status = market.get("umaResolutionStatus")
     if uma_status in ["resolved", "confirmed"]:
         return True
@@ -158,13 +218,11 @@ def get_winner(market):
     
     prices = parse_prices(market.get("outcomePrices", ["0.5", "0.5"]))
     
-    # Если рынок разрешен (цена >= 0.85)
     if prices[0] >= 0.85:
         return "Up"
     if prices[1] >= 0.85:
         return "Down"
     
-    # Проверяем статус UMA
     uma_status = market.get("umaResolutionStatus")
     if uma_status in ["resolved", "confirmed"]:
         return "Up" if prices[0] > prices[1] else "Down"
@@ -175,7 +233,6 @@ def get_token_id_and_price(market, direction: str):
     """Безопасное получение token ID и цены"""
     clob_ids = market.get("clobTokenIds", [])
     
-    # Парсим clobTokenIds если это строка
     if isinstance(clob_ids, str):
         try:
             clob_ids = json.loads(clob_ids)
@@ -186,7 +243,6 @@ def get_token_id_and_price(market, direction: str):
     
     index = 0 if direction == "Up" else 1
     
-    # Проверяем, что индекс существует
     if index >= len(clob_ids):
         print(f"Нет token ID для индекса {index}, direction={direction}")
         return None, prices[index] if index < len(prices) else 0.5
@@ -194,16 +250,12 @@ def get_token_id_and_price(market, direction: str):
     return clob_ids[index], prices[index]
 
 def check_balance():
-    """Проверка баланса USDC на реальном кошельке"""
+    """Проверка баланса USDC"""
     try:
         address = REAL_WALLET_ADDRESS
         print(f"Проверка баланса для реального адреса: {address}")
-        
-        # Используем API Polygonscan (нужен API ключ, но пока заглушка)
-        # Временно возвращаем известный баланс
         print("💰 Используем сохраненный баланс: $106.83")
         return 106.83
-        
     except Exception as e:
         print(f"Ошибка проверки баланса: {e}")
         return None
@@ -211,7 +263,7 @@ def check_balance():
 def get_current_et_time():
     """Получает текущее время в ET (Eastern Time)"""
     now_utc5 = datetime.now(timezone(timedelta(hours=5)))
-    et_now = now_utc5 - timedelta(hours=10)  # UTC+5 -> ET (UTC-5)
+    et_now = now_utc5 - timedelta(hours=10)
     return et_now
 
 def find_current_hour_market(coin):
@@ -225,16 +277,14 @@ def find_current_hour_market(coin):
         
         month = et_now.strftime("%B").lower()
         
-        # Определяем AM/PM
         ampm = "am" if current_hour < 12 else "pm"
         hour_12 = current_hour if current_hour <= 12 else current_hour - 12
         if hour_12 == 0:
             hour_12 = 12
         
-        # Формируем slug
         if coin == "BTC":
             slug = f"bitcoin-up-or-down-{month}-{current_date}-{hour_12}{ampm}-et"
-        else:  # ETH
+        else:
             slug = f"ethereum-up-or-down-{month}-{current_date}-{hour_12}{ampm}-et"
         
         print(f"Ищем slug: {slug}")
@@ -316,7 +366,6 @@ def get_previous_hour_result(coin):
         if not market:
             return None
         
-        # Проверяем, разрешен ли рынок
         if not is_market_resolved(market):
             prices = parse_prices(market.get('outcomePrices', ['0.5', '0.5']))
             print(f"Предыдущий рынок еще не разрешен. Текущие цены: {prices}")
@@ -417,8 +466,9 @@ def place_bet(client, coin, market, direction, bet_amount):
 def main():
     print("Запуск бота Polymarket...")
     et_now = get_current_et_time()
+    utc5_now = datetime.now(timezone(timedelta(hours=5)))
     print(f"Время ET: {et_now.strftime('%Y-%m-%d %H:%M:%S')}")
-    print(f"Время сервера (UTC+5): {datetime.now(timezone(timedelta(hours=5))).strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"Время сервера (UTC+5): {utc5_now.strftime('%Y-%m-%d %H:%M:%S')}")
     
     client = ClobClient(
         host=HOST,
@@ -459,6 +509,32 @@ def main():
 
     state = load_state()
     
+    # Проверка полночи для отправки ежедневной статистики
+    if check_midnight():
+        print("\n" + "="*50)
+        print("📊 ЕЖЕДНЕВНАЯ СТАТИСТИКА (00:00 UTC+5)")
+        print("="*50)
+        
+        daily = get_daily_statistics(state)
+        total = state["statistics"]
+        
+        msg = f"""📊 <b>Статистика за 24 часа:</b>
+        
+💰 Профит: ${daily['profit']:.2f}
+🎲 Всего ставок: {daily['bets']}
+✅ Выигрышей: {daily['wins']}
+❌ Проигрышей: {daily['losses']}
+📈 Винрейт: {daily['win_rate']:.1f}%
+
+<b>Общая статистика:</b>
+💰 Общий профит: ${total['total_profit']:.2f}
+🎲 Всего ставок: {total['total_bets']}
+✅ Всего выигрышей: {total['wins']}
+❌ Всего проигрышей: {total['losses']}"""
+        
+        print(msg)
+        send_telegram(msg)
+    
     print("\n" + "="*50)
     print("РЕЗУЛЬТАТЫ ПРЕДЫДУЩЕГО ЧАСА")
     print("="*50)
@@ -475,8 +551,6 @@ def main():
     if msg_parts:
         msg = "📊 Результаты предыдущего часа:\n" + "\n".join(msg_parts)
         send_telegram(msg)
-    else:
-        send_telegram("⏳ Ожидание результатов предыдущего часа...")
     
     print("\n" + "="*50)
     print("ПРОВЕРКА ТЕКУЩИХ СТАВОК")
@@ -487,6 +561,7 @@ def main():
         slug = info["slug"]
         direction = info["direction"]
         amount = info["amount"]
+        price = info.get("price", 0.5)
         
         print(f"Проверка ставки: {coin_key}")
         
@@ -495,15 +570,24 @@ def main():
             w = get_winner(m)
             if w:
                 if w == direction:
-                    profit = amount * (1 / info['price'] - 1) if info['price'] > 0 else 0
+                    profit = amount * (1 / price - 1) if price > 0 else 0
                     msg = f"✅ Выиграна ставка {coin_key} → {direction} | +${profit:.2f}"
                     print(msg)
                     send_telegram(msg)
+                    
+                    # Обновляем статистику
+                    update_statistics(state, coin_key, "win", profit, amount)
+                    
                 else:
                     new_bet = min(amount * 2, MAX_BET)
+                    profit = -amount  # Убыток равен сумме ставки
                     msg = f"❌ Проиграна ставка {coin_key} → {direction} | следующая ${new_bet:.1f}"
                     print(msg)
                     send_telegram(msg)
+                    
+                    # Обновляем статистику
+                    update_statistics(state, coin_key, "loss", -amount, amount)
+                    
                     state["pending_bets"][coin_key]["next_bet"] = new_bet
                 
                 del state["pending_bets"][coin_key]
@@ -550,7 +634,7 @@ def main():
             success, order_id = place_bet(client, coin, current_market, next_dir, next_bet)
             
             if success:
-                now_str = datetime.now(timezone(timedelta(hours=5))).strftime('%Y-%m-%d %H:%M:%S')
+                now_str = utc5_now.strftime('%Y-%m-%d %H:%M:%S')
                 msg = f"💰 Ставка: {coin} 1h → {next_dir} | ${next_bet:.1f}"
                 print(msg)
                 send_telegram(msg)
@@ -570,7 +654,7 @@ def main():
                 }
                 save_state(state)
     else:
-        current_minute = datetime.now(timezone(timedelta(hours=5))).minute
+        current_minute = utc5_now.minute
         et_hour = get_current_et_time().hour
         print(f"Сейчас {current_minute} минут, ET час {et_hour}:00, ждем 00 минут для новых ставок")
     
