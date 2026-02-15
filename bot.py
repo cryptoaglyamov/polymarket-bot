@@ -178,34 +178,71 @@ def check_balance(client):
         return 100.0  # Возвращаем 100 для теста
 
 def find_correct_market(coin):
-    """Поиск правильного 1h рынка"""
+    """Поиск правильного 1h рынка с отладкой"""
     try:
         # Сначала ищем через поиск
-        url = f"https://gamma-api.polymarket.com/markets?limit=20&active=true&question_contains={coin}"
+        url = f"https://gamma-api.polymarket.com/markets?limit=50&active=true"
+        print(f"Запрос к API: {url}")
         resp = requests.get(url, timeout=10)
         
         if resp.status_code != 200:
+            print(f"Ошибка API: {resp.status_code}")
             return None
         
         markets = resp.json()
+        print(f"Всего активных рынков: {len(markets)}")
         
-        # Ищем рынок с "1h" в названии
+        # Выведем первые 5 рынков для понимания
+        print("\nПервые 5 рынков:")
+        for i, m in enumerate(markets[:5]):
+            prices = m.get('outcomePrices', ['N/A', 'N/A'])
+            print(f"{i+1}. {m.get('question')} - Цены: {prices}")
+        
+        # Ищем рынки с криптовалютами
+        crypto_markets = []
         for market in markets:
             question = market.get('question', '').lower()
-            if f"{coin.lower()} 1h" in question or f"{coin.lower()} hourly" in question:
-                print(f"Найден правильный рынок: {market.get('question')}")
-                return market
+            if any(x in question for x in ['btc', 'bitcoin', 'eth', 'ethereum', 'crypto', 'coin']):
+                crypto_markets.append(market)
         
-        # Если не нашли, берем первый попавшийся с 1h
+        print(f"\nНайдено крипто-рынков: {len(crypto_markets)}")
+        
+        # Если есть крипто-рынки, покажем их
+        if crypto_markets:
+            print("\nКрипто-рынки:")
+            for i, m in enumerate(crypto_markets[:10]):
+                print(f"{i+1}. {m.get('question')}")
+        
+        # Ищем конкретный рынок для coin
+        coin_lower = coin.lower()
+        coin_variants = []
+        
+        if coin_lower == 'btc':
+            coin_variants = ['btc', 'bitcoin']
+        elif coin_lower == 'eth':
+            coin_variants = ['eth', 'ethereum']
+        
         for market in markets:
             question = market.get('question', '').lower()
-            if "1h" in question or "hourly" in question:
-                print(f"Найден рынок с 1h: {market.get('question')}")
-                return market
+            
+            # Проверяем все варианты названия монеты
+            for variant in coin_variants:
+                if variant in question:
+                    print(f"\n✅ Найден рынок с {coin}: {market.get('question')}")
+                    return market
+        
+        # Если не нашли точное совпадение, возьмем первый крипто-рынок для теста
+        if crypto_markets:
+            print(f"\n⚠️ Не нашли точный рынок для {coin}, берем первый крипто-рынок:")
+            test_market = crypto_markets[0]
+            print(f"Тестовый рынок: {test_market.get('question')}")
+            return test_market
         
         return None
     except Exception as e:
         print(f"Ошибка поиска рынка: {e}")
+        import traceback
+        traceback.print_exc()
         return None
 
 def place_initial_down_bet(client, coin, state):
@@ -220,18 +257,20 @@ def place_initial_down_bet(client, coin, state):
             print(f"{coin} → не найден подходящий рынок")
             return False
         
-        print(f"Рынок: {market.get('question')}")
+        print(f"\nВыбран рынок: {market.get('question')}")
         print(f"Цены (сырые): {market.get('outcomePrices')}")
         print(f"Токены: {market.get('clobTokenIds')}")
+        print(f"Активен: {market.get('active')}")
+        print(f"Закрыт: {market.get('closed')}")
         
         # Проверяем, можно ли торговать
-        if market.get('active') == False:
-            print(f"{coin} → рынок не активен")
+        if market.get('closed') == True:
+            print(f"{coin} → рынок закрыт")
             return False
         
         clob_ids = market.get("clobTokenIds", [])
         if len(clob_ids) < 2:
-            print(f"{coin} → нет токенов для торговли")
+            print(f"{coin} → нет токенов для торговли: {clob_ids}")
             return False
         
         # Получаем данные для Down
@@ -275,7 +314,7 @@ def place_initial_down_bet(client, coin, state):
         if isinstance(resp, dict):
             if "id" in resp or resp.get("status") in ("success", "placed"):
                 now_str = datetime.now(timezone(timedelta(hours=5))).strftime('%Y-%m-%d %H:%M:%S')
-                msg = f"🎯 ПЕРВАЯ СТАВКА: {coin} 1h → Down | ${BASE_BET:.1f} по {bet_price:.3f}"
+                msg = f"🎯 ПЕРВАЯ СТАВКА: {coin} → Down | ${BASE_BET:.1f} по {bet_price:.3f}"
                 print(msg)
                 send_telegram(msg)
                 
@@ -324,6 +363,15 @@ def main():
         print("❌ Ошибка API creds:", str(e))
         send_telegram(f"❌ Ошибка API creds: {str(e)}")
         return
+
+    # Диагностика
+    print("\n=== ДИАГНОСТИКА ===")
+    try:
+        print("Пробуем получить баланс...")
+        balance = check_balance(client)
+        print(f"Баланс: ${balance}")
+    except Exception as e:
+        print(f"Ошибка диагностики: {e}")
 
     state = load_state()
     
@@ -406,8 +454,8 @@ def main():
                 
                 print(f"Рынок: {market.get('question')}")
                 
-                if market.get('active') == False:
-                    print(f"{coin} → рынок не активен")
+                if market.get('closed') == True:
+                    print(f"{coin} → рынок закрыт")
                     continue
                 
                 clob_ids = market.get("clobTokenIds", [])
@@ -482,7 +530,7 @@ def main():
                 if isinstance(resp, dict):
                     if "id" in resp or resp.get("status") in ("success", "placed"):
                         now_str = now.strftime('%Y-%m-%d %H:%M:%S')
-                        msg = f"💰 Ставка: {coin} 1h → {next_dir} | ${current_bet:.1f} по {bet_price:.3f}"
+                        msg = f"💰 Ставка: {coin} → {next_dir} | ${current_bet:.1f} по {bet_price:.3f}"
                         print(msg)
                         send_telegram(msg)
                         
