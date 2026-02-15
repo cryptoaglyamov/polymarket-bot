@@ -13,43 +13,73 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v3
       
-    - name: Test Asia proxy
+    - name: Test multiple Asia proxies
       run: |
-        echo "=== ТЕСТ АЗИАТСКОГО ПРОКСИ ==="
+        echo "=== ТЕСТ АЗИАТСКИХ ПРОКСИ ==="
         
-        # Прокси из Сингапура
-        PROXY="139.59.125.125:8080"
-        echo "Тестируем прокси: $PROXY"
-        echo ""
+        # Список прокси для тестирования
+        PROXIES=(
+          "165.154.243.51:3128"      # Сингапур
+          "188.166.56.249:3128"      # Сингапур
+          "134.209.105.155:3128"     # Сингапур
+          "68.183.141.128:3128"      # Сингапур
+          "139.162.78.109:3128"      # Япония
+          "139.162.44.17:3128"        # Япония
+        )
         
-        echo "1. Проверка внешнего IP через прокси:"
-        curl -x http://$PROXY https://api.ipify.org
-        echo ""
+        for PROXY in "${PROXIES[@]}"; do
+          echo ""
+          echo "=================================="
+          echo "Тестируем прокси: $PROXY"
+          echo "=================================="
+          
+          # Проверка доступности порта
+          echo "1. Проверка порта:"
+          timeout 3 nc -zv ${PROXY/:/ } 2>&1 && echo "✅ Порт открыт" || echo "❌ Порт закрыт"
+          
+          # Проверка внешнего IP
+          echo "2. Внешний IP через прокси:"
+          IP=$(timeout 5 curl -x http://$PROXY -s https://api.ipify.org 2>/dev/null)
+          if [ -n "$IP" ]; then
+            echo "✅ IP: $IP"
+          else
+            echo "❌ Не удалось получить IP"
+          fi
+          
+          # Проверка Polymarket
+          echo "3. Подключение к Polymarket:"
+          STATUS=$(timeout 5 curl -I -x http://$PROXY -s -o /dev/null -w "%{http_code}" https://clob.polymarket.com 2>/dev/null)
+          if [ "$STATUS" = "200" ]; then
+            echo "✅ Polymarket доступен (статус: $STATUS)"
+          else
+            echo "❌ Polymarket недоступен (статус: $STATUS)"
+          fi
+          
+          echo ""
+        done
         
-        echo "2. Проверка подключения к Polymarket:"
-        curl -I -x http://$PROXY https://clob.polymarket.com | head -n 1
-        echo ""
-        
-        echo "=== ТЕСТ ЗАВЕРШЕН ==="
-        
-    - name: Set up proxy environment
+    - name: Set up proxy environment (если найден рабочий)
+      if: false  # Пока отключаем, сначала нужно найти рабочий прокси
       run: |
-        echo "HTTP_PROXY=http://139.59.125.125:8080" >> $GITHUB_ENV
-        echo "HTTPS_PROXY=http://139.59.125.125:8080" >> $GITHUB_ENV
-        echo "http_proxy=http://139.59.125.125:8080" >> $GITHUB_ENV
-        echo "https_proxy=http://139.59.125.125:8080" >> $GITHUB_ENV
+        echo "HTTP_PROXY=http://WORKING_PROXY:PORT" >> $GITHUB_ENV
+        echo "HTTPS_PROXY=http://WORKING_PROXY:PORT" >> $GITHUB_ENV
+        echo "http_proxy=http://WORKING_PROXY:PORT" >> $GITHUB_ENV
+        echo "https_proxy=http://WORKING_PROXY:PORT" >> $GITHUB_ENV
         echo "NO_PROXY=localhost,127.0.0.1" >> $GITHUB_ENV
         
     - name: Set up Python
+      if: false
       uses: actions/setup-python@v4
       with:
         python-version: '3.10'
         
     - name: Install dependencies
+      if: false
       run: |
         pip install -r requirements.txt
         
     - name: Run bot
+      if: false
       env:
         PRIVATE_KEY: ${{ secrets.PRIVATE_KEY }}
         TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
@@ -57,6 +87,7 @@ jobs:
       run: python bot.py
       
     - name: Save state file
+      if: false
       run: |
         git config --local user.email "action@github.com"
         git config --local user.name "GitHub Action"
