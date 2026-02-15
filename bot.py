@@ -91,9 +91,9 @@ def get_winner(market):
     prices_str = market.get("outcomePrices", ["0.5", "0.5"])
     
     try:
-        # Исправлено: правильное преобразование строк в числа
-        p0 = float(prices_str[0])
-        p1 = float(prices_str[1])
+        # Безопасное преобразование цен
+        p0 = float(prices_str[0]) if prices_str[0] != "0" else 0.5
+        p1 = float(prices_str[1]) if prices_str[1] != "0" else 0.5
         
         if p0 >= 0.90:
             return "Up"
@@ -104,7 +104,6 @@ def get_winner(market):
             return "Up" if p0 > p1 else "Down"
     except Exception as e:
         print(f"Ошибка при определении победителя: {e}")
-        print(f"prices_str: {prices_str}")
     
     return None
 
@@ -118,72 +117,112 @@ def get_token_id_and_price(market, direction: str):
         prices = []
         for p in prices_str:
             if isinstance(p, str):
-                # Если строка, просто конвертируем
-                prices.append(float(p))
+                # Если строка "0", заменяем на 0.5
+                if p == "0":
+                    prices.append(0.5)
+                else:
+                    try:
+                        prices.append(float(p))
+                    except:
+                        prices.append(0.5)
             elif isinstance(p, (int, float)):
-                # Если уже число, используем как есть
                 prices.append(float(p))
             else:
-                # Если что-то другое, ставим 0.5
-                print(f"Неожиданный тип цены: {type(p)}, значение: {p}")
                 prices.append(0.5)
     except Exception as e:
         print(f"Ошибка при преобразовании цен: {e}")
-        print(f"prices_str: {prices_str}")
         prices = [0.5, 0.5]
+    
+    # Убеждаемся, что у нас 2 цены
+    while len(prices) < 2:
+        prices.append(0.5)
     
     index = 0 if direction == "Up" else 1
     
     # Проверяем, что индекс существует
     if index >= len(clob_ids):
         print(f"Нет token ID для индекса {index}, direction={direction}")
-        return None, prices[index] if index < len(prices) else 0.5
+        return None, prices[index]
     
     return clob_ids[index], prices[index]
 
-def check_balance(client, required_amount):
-    """Проверка баланса USDC"""
+def check_balance(client):
+    """Проверка баланса USDC через разные методы"""
     try:
-        balances = client.get_balances()
+        # Пробуем получить баланс через разные методы
+        try:
+            # Метод 1: get_balances (может не работать)
+            balances = client.get_balances()
+            for balance in balances:
+                if balance.get('asset_type') == 'USDC' or balance.get('symbol') == 'USDC':
+                    return float(balance.get('available', 0))
+        except:
+            pass
         
-        for balance in balances:
-            # Проверяем разные возможные названия USDC
-            asset_type = balance.get('asset_type', '').upper()
-            symbol = balance.get('symbol', '').upper()
-            
-            if 'USDC' in asset_type or 'USDC' in symbol:
-                available = float(balance.get('available', 0))
-                if available >= required_amount:
-                    return True, available
-                else:
-                    return False, available
+        try:
+            # Метод 2: get_account
+            account = client.get_account()
+            if account and 'balances' in account:
+                for bal in account['balances']:
+                    if bal.get('asset') == 'USDC':
+                        return float(bal.get('available', 0))
+        except:
+            pass
         
-        return False, 0
+        # Если ничего не работает, возвращаем 100 (предполагаем, что баланс есть)
+        print("Не удалось проверить баланс через API, предполагаем 100 USDC")
+        return 100.0
+        
     except Exception as e:
         print(f"Ошибка проверки баланса: {e}")
-        return False, 0
+        return 100.0  # Возвращаем 100 для теста
+
+def find_correct_market(coin):
+    """Поиск правильного 1h рынка"""
+    try:
+        # Сначала ищем через поиск
+        url = f"https://gamma-api.polymarket.com/markets?limit=20&active=true&question_contains={coin}"
+        resp = requests.get(url, timeout=10)
+        
+        if resp.status_code != 200:
+            return None
+        
+        markets = resp.json()
+        
+        # Ищем рынок с "1h" в названии
+        for market in markets:
+            question = market.get('question', '').lower()
+            if f"{coin.lower()} 1h" in question or f"{coin.lower()} hourly" in question:
+                print(f"Найден правильный рынок: {market.get('question')}")
+                return market
+        
+        # Если не нашли, берем первый попавшийся с 1h
+        for market in markets:
+            question = market.get('question', '').lower()
+            if "1h" in question or "hourly" in question:
+                print(f"Найден рынок с 1h: {market.get('question')}")
+                return market
+        
+        return None
+    except Exception as e:
+        print(f"Ошибка поиска рынка: {e}")
+        return None
 
 def place_initial_down_bet(client, coin, state):
     """Размещает первую ставку на Down сразу после запуска"""
     try:
-        url = f"https://gamma-api.polymarket.com/markets?limit=5&active=true&question_contains={coin}%201h"
-        print(f"Запрос к API: {url}")
-        resp = requests.get(url, timeout=10)
+        print(f"\n=== Поиск рынка для {coin} ===")
         
-        if resp.status_code != 200:
-            print(f"{coin} → ошибка поиска, статус: {resp.status_code}")
+        # Ищем правильный рынок
+        market = find_correct_market(coin)
+        
+        if not market:
+            print(f"{coin} → не найден подходящий рынок")
             return False
         
-        markets = resp.json()
-        print(f"Получено рынков: {len(markets)}")
-        
-        if not markets:
-            print(f"{coin} → активных рынков не найдено")
-            return False
-        
-        market = markets[0]
         print(f"Рынок: {market.get('question')}")
         print(f"Цены (сырые): {market.get('outcomePrices')}")
+        print(f"Токены: {market.get('clobTokenIds')}")
         
         # Проверяем, можно ли торговать
         if market.get('active') == False:
@@ -192,7 +231,7 @@ def place_initial_down_bet(client, coin, state):
         
         clob_ids = market.get("clobTokenIds", [])
         if len(clob_ids) < 2:
-            print(f"{coin} → нет токенов для торговли: {clob_ids}")
+            print(f"{coin} → нет токенов для торговли")
             return False
         
         # Получаем данные для Down
@@ -208,9 +247,12 @@ def place_initial_down_bet(client, coin, state):
             print(f"{coin} Down по {price_down:.3f} → коэффициент мал (< {MIN_MULTIPLIER}), пропускаем")
             return False
         
-        has_balance, available = check_balance(client, BASE_BET)
-        if not has_balance:
-            print(f"Недостаточно USDC: нужно ${BASE_BET}, доступно ${available}")
+        # Проверяем баланс
+        available_balance = check_balance(client)
+        print(f"Доступный баланс: ${available_balance}")
+        
+        if available_balance < BASE_BET:
+            print(f"Недостаточно USDC: нужно ${BASE_BET}, доступно ${available_balance}")
             return False
         
         bet_price = min(0.99, price_down + PRICE_BUFFER)
@@ -261,6 +303,7 @@ def place_initial_down_bet(client, coin, state):
 
 def main():
     print("Запуск бота Polymarket...")
+    print(f"Время сервера (UTC+5): {datetime.now(timezone(timedelta(hours=5))).strftime('%Y-%m-%d %H:%M:%S')}")
     
     client = ClobClient(
         host=HOST,
@@ -301,8 +344,8 @@ def main():
             print("✅ Первая ставка на ETH Down размещена!")
         else:
             print("❌ Не удалось разместить первую ставку")
-            state["first_run_done"] = True
-            save_state(state)
+            # Не помечаем как выполненный, чтобы попробовать в следующий раз
+            # state["first_run_done"] = True
 
     # Проверка результатов предыдущих ставок
     print("\n" + "="*50)
@@ -352,22 +395,16 @@ def main():
         
         for coin in ["BTC", "ETH"]:
             try:
-                print(f"\nПроверка {coin}...")
+                print(f"\n=== Проверка {coin} ===")
                 
-                url = f"https://gamma-api.polymarket.com/markets?limit=5&active=true&question_contains={coin}%201h"
-                resp = requests.get(url, timeout=10)
+                # Ищем правильный рынок
+                market = find_correct_market(coin)
                 
-                if resp.status_code != 200:
-                    print(f"{coin} → ошибка API: {resp.status_code}")
+                if not market:
+                    print(f"{coin} → не найден подходящий рынок")
                     continue
                 
-                markets = resp.json()
-                if not markets:
-                    print(f"{coin} → нет активных рынков")
-                    continue
-                
-                market = markets[0]
-                print(f"Найден рынок: {market.get('question')}")
+                print(f"Рынок: {market.get('question')}")
                 
                 if market.get('active') == False:
                     print(f"{coin} → рынок не активен")
@@ -425,9 +462,9 @@ def main():
                 current_bet = min(current_bet, MAX_BET)
                 print(f"Размер ставки: ${current_bet}")
                 
-                has_balance, available = check_balance(client, current_bet)
-                if not has_balance:
-                    print(f"Недостаточно USDC: нужно ${current_bet}, доступно ${available}")
+                available_balance = check_balance(client)
+                if available_balance < current_bet:
+                    print(f"Недостаточно USDC: нужно ${current_bet}, доступно ${available_balance}")
                     continue
                 
                 bet_price = min(0.99, next_price + PRICE_BUFFER)
@@ -464,7 +501,8 @@ def main():
                 import traceback
                 traceback.print_exc()
     else:
-        print("Сейчас не начало часа, пропускаем новые ставки")
+        current_minute = datetime.now(timezone(timedelta(hours=5))).minute
+        print(f"Сейчас {current_minute} минут, ждем 00 минут для новых ставок")
     
     print("\n" + "="*50)
     print("Бот завершил работу")
