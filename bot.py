@@ -147,13 +147,14 @@ def get_daily_statistics(state):
 def check_midnight():
     """Проверяет, наступила ли полночь по UTC+5"""
     now = datetime.now(timezone(timedelta(hours=5)))
-    return now.hour == 0 and now.minute == 0 and now.second < 10
+    return now.hour == 0 and now.minute == 0
 
 # ========== ФУНКЦИИ ДЛЯ РАБОТЫ С POLYMARKET ==========
 
 def is_new_hour():
+    """Проверяет, наступило ли начало часа (без проверки секунд)"""
     now = datetime.now(timezone(timedelta(hours=5)))
-    return now.minute == 0 and now.second < 10
+    return now.minute == 0  # Проверяем только минуты
 
 def get_market(slug: str):
     url = f"https://gamma-api.polymarket.com/markets?slug={slug}"
@@ -580,7 +581,7 @@ def main():
                     
                 else:
                     new_bet = min(amount * 2, MAX_BET)
-                    profit = -amount  # Убыток равен сумме ставки
+                    profit = -amount
                     msg = f"❌ Проиграна ставка {coin_key} → {direction} | следующая ${new_bet:.1f}"
                     print(msg)
                     send_telegram(msg)
