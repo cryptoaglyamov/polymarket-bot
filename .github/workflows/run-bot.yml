@@ -1,7 +1,7 @@
 name: Run Polymarket Bot
 
 on:
-  workflow_dispatch:  # Ручной запуск
+  workflow_dispatch:
 
 jobs:
   run-bot:
@@ -17,6 +17,13 @@ jobs:
       uses: actions/setup-python@v4
       with:
         python-version: '3.10'
+        
+    - name: Set up proxy environment
+      run: |
+        echo "HTTP_PROXY=http://147.185.221.23:21506" >> $GITHUB_ENV
+        echo "HTTPS_PROXY=http://147.185.221.23:21506" >> $GITHUB_ENV
+        echo "http_proxy=http://147.185.221.23:21506" >> $GITHUB_ENV
+        echo "https_proxy=http://147.185.221.23:21506" >> $GITHUB_ENV
         
     - name: Install dependencies
       run: |
