@@ -82,6 +82,29 @@ def get_market(slug: str):
         print(f"Ошибка gamma API {slug}: {e}")
         return None
 
+def parse_prices(prices_str):
+    """Правильный парсинг цен из API"""
+    try:
+        if isinstance(prices_str, list):
+            prices = []
+            for p in prices_str:
+                if isinstance(p, str):
+                    # Убираем кавычки и преобразуем в float
+                    p_clean = p.strip('"').strip("'")
+                    try:
+                        prices.append(float(p_clean))
+                    except:
+                        prices.append(0.5)
+                elif isinstance(p, (int, float)):
+                    prices.append(float(p))
+                else:
+                    prices.append(0.5)
+            return prices
+        return [0.5, 0.5]
+    except Exception as e:
+        print(f"Ошибка парсинга цен: {e}")
+        return [0.5, 0.5]
+
 def is_market_resolved(market):
     """
     Определяет, разрешен ли рынок (закрыт) по цене
@@ -91,83 +114,45 @@ def is_market_resolved(market):
         return False
     
     prices_str = market.get("outcomePrices", ["0.5", "0.5"])
+    prices = parse_prices(prices_str)
     
-    try:
-        # Безопасное преобразование цен
-        p0 = float(prices_str[0]) if prices_str[0] != "0" else 0.5
-        p1 = float(prices_str[1]) if prices_str[1] != "0" else 0.5
-        
-        # Если одна из цен достигла 0.85 или выше - рынок разрешен
-        if p0 >= 0.85 or p1 >= 0.85:
-            return True
-        
-        return False
-    except Exception as e:
-        print(f"Ошибка при проверке разрешения рынка: {e}")
-        return False
+    # Если одна из цен достигла 0.85 или выше - рынок разрешен
+    if prices[0] >= 0.85 or prices[1] >= 0.85:
+        return True
+    
+    return False
 
 def get_winner(market):
     if not market:
         return None
     
     prices_str = market.get("outcomePrices", ["0.5", "0.5"])
+    prices = parse_prices(prices_str)
     
-    try:
-        # Безопасное преобразование цен
-        p0 = float(prices_str[0]) if prices_str[0] != "0" else 0.5
-        p1 = float(prices_str[1]) if prices_str[1] != "0" else 0.5
-        
-        # Если рынок разрешен (цена >= 0.85)
-        if p0 >= 0.85:
-            return "Up"
-        if p1 >= 0.85:
-            return "Down"
-        
-        # Если рынок официально закрыт по API
-        if market.get("closed"):
-            return "Up" if p0 > p1 else "Down"
-        
-        return None
-    except Exception as e:
-        print(f"Ошибка при определении победителя: {e}")
-        return None
+    # Если рынок разрешен (цена >= 0.85)
+    if prices[0] >= 0.85:
+        return "Up"
+    if prices[1] >= 0.85:
+        return "Down"
+    
+    # Если рынок официально закрыт по API
+    if market.get("closed"):
+        return "Up" if prices[0] > prices[1] else "Down"
+    
+    return None
 
 def get_token_id_and_price(market, direction: str):
     """Безопасное получение token ID и цены"""
     clob_ids = market.get("clobTokenIds", [])
     prices_str = market.get("outcomePrices", ["0.5", "0.5"])
-    
-    try:
-        # Безопасное преобразование цен
-        prices = []
-        for p in prices_str:
-            if isinstance(p, str):
-                # Если строка "0", заменяем на 0.5
-                if p == "0":
-                    prices.append(0.5)
-                else:
-                    try:
-                        prices.append(float(p))
-                    except:
-                        prices.append(0.5)
-            elif isinstance(p, (int, float)):
-                prices.append(float(p))
-            else:
-                prices.append(0.5)
-    except Exception as e:
-        print(f"Ошибка при преобразовании цен: {e}")
-        prices = [0.5, 0.5]
-    
-    # Убеждаемся, что у нас 2 цены
-    while len(prices) < 2:
-        prices.append(0.5)
+    prices = parse_prices(prices_str)
     
     index = 0 if direction == "Up" else 1
     
     # Проверяем, что индекс существует
     if index >= len(clob_ids):
         print(f"Нет token ID для индекса {index}, direction={direction}")
-        return None, prices[index]
+        return None, prices[index] if index < len(prices) else 0.5
     
     return clob_ids[index], prices[index]
 
@@ -179,73 +164,64 @@ def check_balance(client):
         
         # Прямой запрос к CLOB API для получения баланса
         headers = {}
-        if hasattr(client, '_api_creds') and client._api_creds:
-            headers = {
-                "POLY_ADDRESS": address,
-                "POLY_SIGNATURE": client._api_creds.get('signature', ''),
-                "POLY_TIMESTAMP": str(int(time.time())),
-                "POLY_NONCE": str(int(time.time() * 1000))
-            }
         
-        # Пробуем разные эндпоинты для баланса
-        balance_urls = [
-            f"{HOST}/balance",
-            f"{HOST}/v1/balance",
-            f"{HOST}/api/balance",
-        ]
-        
-        for url in balance_urls:
-            try:
-                print(f"Пробуем получить баланс через: {url}")
-                resp = requests.get(url, headers=headers, timeout=10)
-                if resp.status_code == 200:
-                    data = resp.json()
-                    print(f"Ответ от {url}: {data}")
-                    
-                    # Парсим разные форматы ответа
-                    if isinstance(data, dict):
-                        if 'balance' in data:
-                            return float(data['balance'])
-                        elif 'usdc' in data:
-                            return float(data['usdc'])
-                        elif 'amount' in data:
-                            return float(data['amount'])
-                    elif isinstance(data, (int, float)):
-                        return float(data)
-                    elif isinstance(data, str):
-                        try:
-                            return float(data)
-                        except:
-                            pass
-            except Exception as e:
-                print(f"Ошибка при запросе к {url}: {e}")
-                continue
-        
-        # Если не получилось, пробуем получить баланс через симуляцию ордера
-        print("Пробуем получить баланс через симуляцию...")
+        # Пробуем получить баланс через эндпоинт баланса Polymarket
         try:
-            # Пробуем создать тестовый ордер с размером 0
-            order_args = OrderArgs(
-                token_id="0",  # тестовый токен
-                side=BUY,
-                price=0.5,
-                size=0.01
-            )
-            signed = client.create_order(order_args)
-            # Если ордер создался, значит баланс есть
-            print("✅ API creds работают, баланс предположительно есть")
-            return 100.0  # Возвращаем 100 для теста
+            # Сначала пробуем получить баланс через REST API
+            url = f"https://clob.polymarket.com/balances"
+            print(f"Запрос к: {url}")
+            
+            # Добавляем заголовки авторизации
+            if hasattr(client, '_api_creds') and client._api_creds:
+                headers = {
+                    "Authorization": f"Bearer {client._api_creds.get('api_key', '')}",
+                    "Content-Type": "application/json"
+                }
+            
+            resp = requests.get(url, headers=headers, timeout=10)
+            print(f"Статус ответа: {resp.status_code}")
+            
+            if resp.status_code == 200:
+                data = resp.json()
+                print(f"Ответ баланса: {data}")
+                
+                # Парсим разные форматы ответа
+                if isinstance(data, list):
+                    for item in data:
+                        if item.get('currency') == 'USDC' or item.get('asset') == 'USDC':
+                            return float(item.get('balance', 0))
+                elif isinstance(data, dict):
+                    if 'USDC' in data:
+                        return float(data['USDC'])
+                    elif 'balance' in data:
+                        return float(data['balance'])
         except Exception as e:
-            print(f"Ошибка симуляции: {e}")
+            print(f"Ошибка при запросе баланса: {e}")
         
-        print("⚠️ Не удалось получить реальный баланс, предполагаем 100 USDC для теста")
-        return 100.0
+        # Если не получилось, пробуем другой эндпоинт
+        try:
+            url = f"https://clob.polymarket.com/balance?address={address}"
+            print(f"Запрос к: {url}")
+            resp = requests.get(url, timeout=10)
+            if resp.status_code == 200:
+                data = resp.json()
+                print(f"Ответ: {data}")
+                if isinstance(data, (int, float)):
+                    return float(data)
+                elif isinstance(data, dict) and 'balance' in data:
+                    return float(data['balance'])
+        except:
+            pass
+        
+        # Если баланс не получен, возвращаем None чтобы вызвать ошибку
+        print("❌ Не удалось получить баланс через API")
+        return None
         
     except Exception as e:
         print(f"Ошибка проверки баланса: {e}")
         import traceback
         traceback.print_exc()
-        return 100.0
+        return None
 
 def get_current_et_time():
     """Получает текущее время в ET (Eastern Time)"""
@@ -288,11 +264,11 @@ def find_current_hour_market(coin):
             if markets:
                 market = markets[0]
                 prices = market.get('outcomePrices', ['N/A', 'N/A'])
+                parsed_prices = parse_prices(prices)
                 resolved = is_market_resolved(market)
                 print(f"✅ Найден рынок: {market.get('question')}")
-                print(f"   Цены: {prices}")
+                print(f"   Цены: {parsed_prices}")
                 print(f"   Разрешен: {resolved}")
-                print(f"   API closed: {market.get('closed')}")
                 return market
         
         print(f"❌ Рынок для часа {current_hour} не найден")
@@ -341,11 +317,11 @@ def get_previous_hour_market(coin):
             if markets:
                 market = markets[0]
                 prices = market.get('outcomePrices', ['N/A', 'N/A'])
+                parsed_prices = parse_prices(prices)
                 resolved = is_market_resolved(market)
                 print(f"✅ Найден предыдущий рынок: {market.get('question')}")
-                print(f"   Цены: {prices}")
+                print(f"   Цены: {parsed_prices}")
                 print(f"   Разрешен: {resolved}")
-                print(f"   API closed: {market.get('closed')}")
                 return market
         
         print(f"❌ Предыдущий рынок не найден")
@@ -365,7 +341,8 @@ def get_previous_hour_result(coin):
         
         # Проверяем, разрешен ли рынок (по цене >= 0.85)
         if not is_market_resolved(market):
-            print(f"Предыдущий рынок еще не разрешен (цены не достигли 0.85)")
+            prices = parse_prices(market.get('outcomePrices', ['0.5', '0.5']))
+            print(f"Предыдущий рынок еще не разрешен. Текущие цены: {prices}")
             return None
         
         # Получаем победителя
@@ -417,6 +394,10 @@ def place_bet(client, coin, market, direction, bet_amount):
         
         # Проверяем баланс
         available_balance = check_balance(client)
+        if available_balance is None:
+            print("❌ Не удалось проверить баланс, ставка отменена")
+            return False, None
+            
         print(f"Доступный баланс: ${available_balance:.2f}")
         
         if available_balance < bet_amount:
@@ -474,6 +455,12 @@ def main():
     # Проверяем реальный баланс
     print("\n=== ПРОВЕРКА БАЛАНСА ===")
     real_balance = check_balance(client)
+    
+    if real_balance is None:
+        print("❌ КРИТИЧЕСКАЯ ОШИБКА: Не удалось получить баланс. Бот остановлен.")
+        send_telegram("❌ Ошибка: не удалось получить баланс аккаунта")
+        return
+    
     print(f"💰 Реальный баланс: ${real_balance:.2f}")
     
     if real_balance < BASE_BET:
