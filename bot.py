@@ -14,6 +14,9 @@ PRIVATE_KEY = os.environ.get('PRIVATE_KEY')
 TELEGRAM_TOKEN = os.environ.get('TELEGRAM_TOKEN')
 TELEGRAM_CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID')
 
+# 👇 ВАШ РЕАЛЬНЫЙ АДРЕС КОШЕЛЬКА С USDC
+REAL_WALLET_ADDRESS = "0xc28d92cB2D25b5282c526FA1875d0268D1C4c177"
+
 if not PRIVATE_KEY:
     raise ValueError("PRIVATE_KEY не найден в переменных окружения!")
 
@@ -156,65 +159,66 @@ def get_token_id_and_price(market, direction: str):
     
     return clob_ids[index], prices[index]
 
-def check_balance(client):
-    """Проверка реального баланса USDC через API биржи"""
+def check_balance():
+    """Проверка баланса USDC на реальном кошельке"""
     try:
-        address = client.get_address()
-        print(f"Проверка баланса для адреса: {address}")
+        address = REAL_WALLET_ADDRESS
+        print(f"Проверка баланса для реального адреса: {address}")
         
-        # Прямой запрос к CLOB API для получения баланса
-        headers = {}
+        # Пробуем разные эндпоинты для получения баланса
+        endpoints = [
+            f"https://polygon.api.0x.org/balance?address={address}&token=USDC",
+            f"https://api.polygonscan.com/api?module=account&action=tokenbalance&contractaddress=0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174&address={address}&tag=latest",
+            f"https://clob.polymarket.com/balance?address={address}",
+        ]
         
-        # Пробуем получить баланс через эндпоинт баланса Polymarket
-        try:
-            # Сначала пробуем получить баланс через REST API
-            url = f"https://clob.polymarket.com/balances"
-            print(f"Запрос к: {url}")
-            
-            # Добавляем заголовки авторизации
-            if hasattr(client, '_api_creds') and client._api_creds:
-                headers = {
-                    "Authorization": f"Bearer {client._api_creds.get('api_key', '')}",
-                    "Content-Type": "application/json"
-                }
-            
-            resp = requests.get(url, headers=headers, timeout=10)
-            print(f"Статус ответа: {resp.status_code}")
-            
-            if resp.status_code == 200:
-                data = resp.json()
-                print(f"Ответ баланса: {data}")
+        for url in endpoints:
+            try:
+                print(f"Запрос к: {url}")
+                resp = requests.get(url, timeout=10)
+                print(f"Статус ответа: {resp.status_code}")
                 
-                # Парсим разные форматы ответа
-                if isinstance(data, list):
-                    for item in data:
-                        if item.get('currency') == 'USDC' or item.get('asset') == 'USDC':
-                            return float(item.get('balance', 0))
-                elif isinstance(data, dict):
-                    if 'USDC' in data:
-                        return float(data['USDC'])
-                    elif 'balance' in data:
-                        return float(data['balance'])
-        except Exception as e:
-            print(f"Ошибка при запросе баланса: {e}")
+                if resp.status_code == 200:
+                    data = resp.json()
+                    print(f"Ответ: {data}")
+                    
+                    # Парсим разные форматы ответа
+                    if isinstance(data, dict):
+                        if 'balance' in data:
+                            balance = float(data['balance']) / 1e6  # USDC имеет 6 decimals
+                            return balance
+                        elif 'result' in data:
+                            balance = float(data['result']) / 1e6
+                            return balance
+                    elif isinstance(data, (int, float)):
+                        return float(data) / 1e6
+            except Exception as e:
+                print(f"Ошибка при запросе к {url}: {e}")
+                continue
         
-        # Если не получилось, пробуем другой эндпоинт
+        # Если не получилось через API, пробуем через простой GET запрос
         try:
-            url = f"https://clob.polymarket.com/balance?address={address}"
-            print(f"Запрос к: {url}")
-            resp = requests.get(url, timeout=10)
+            # Прямой запрос к Polygon RPC
+            url = "https://polygon-rpc.com/"
+            payload = {
+                "jsonrpc": "2.0",
+                "method": "eth_call",
+                "params": [{
+                    "to": "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174",  # USDC contract
+                    "data": "0x70a08231000000000000000000000000" + address[2:]  # balanceOf
+                }, "latest"],
+                "id": 1
+            }
+            resp = requests.post(url, json=payload, timeout=10)
             if resp.status_code == 200:
                 data = resp.json()
-                print(f"Ответ: {data}")
-                if isinstance(data, (int, float)):
-                    return float(data)
-                elif isinstance(data, dict) and 'balance' in data:
-                    return float(data['balance'])
-        except:
-            pass
+                if 'result' in data:
+                    balance = int(data['result'], 16) / 1e6
+                    return balance
+        except Exception as e:
+            print(f"Ошибка RPC запроса: {e}")
         
-        # Если баланс не получен, возвращаем None чтобы вызвать ошибку
-        print("❌ Не удалось получить баланс через API")
+        print("❌ Не удалось получить баланс через все методы")
         return None
         
     except Exception as e:
@@ -393,7 +397,7 @@ def place_bet(client, coin, market, direction, bet_amount):
             return False, None
         
         # Проверяем баланс
-        available_balance = check_balance(client)
+        available_balance = check_balance()
         if available_balance is None:
             print("❌ Не удалось проверить баланс, ставка отменена")
             return False, None
@@ -450,11 +454,13 @@ def main():
         funder=None
     )
 
-    print(f"Адрес кошелька: {client.get_address()}")
+    generated_address = client.get_address()
+    print(f"Адрес из приватного ключа: {generated_address}")
+    print(f"Реальный адрес кошелька: {REAL_WALLET_ADDRESS}")
     
-    # Проверяем реальный баланс
+    # Проверяем реальный баланс на правильном адресе
     print("\n=== ПРОВЕРКА БАЛАНСА ===")
-    real_balance = check_balance(client)
+    real_balance = check_balance()
     
     if real_balance is None:
         print("❌ КРИТИЧЕСКАЯ ОШИБКА: Не удалось получить баланс. Бот остановлен.")
