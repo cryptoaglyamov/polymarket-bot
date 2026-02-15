@@ -1,9 +1,6 @@
 name: Run Polymarket Bot
 
 on:
-  schedule:
-    # Запуск каждый час в 0 минут UTC
-    - cron: '0 * * * *'
   workflow_dispatch:  # Ручной запуск
 
 jobs:
