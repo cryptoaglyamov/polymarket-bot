@@ -405,22 +405,12 @@ def get_market_by_timestamp(coin, timestamp):
 def get_interval_result(coin, minutes_ago):
     """
     Получает результат для интервала, который был minutes_ago минут назад
-    minutes_ago: 15 = предыдущий, 30 = позапрошлый и т.д.
     """
     try:
-        et_now = get_current_et_time()
-        
         print(f"\n=== Получение результата для {coin}, {minutes_ago} минут назад ===")
         
-        # Получаем правильный timestamp на основе UTC
+        # Получаем timestamp на основе UTC
         timestamp, interval_time_et = get_interval_timestamp(coin, minutes_ago)
-        
-        # Проверяем, закончился ли интервал
-        interval_end_time = interval_time_et + timedelta(minutes=15)
-        if et_now < interval_end_time:
-            print(f"⏳ Интервал еще НЕ ЗАКОНЧИЛСЯ (закончится в {interval_end_time.hour}:{interval_end_time.minute:02d} ET)")
-            print(f"   Текущее время ET: {et_now.hour}:{et_now.minute:02d}")
-            return None
         
         # Получаем рынок
         market = get_market_by_timestamp(coin, timestamp)
@@ -429,6 +419,7 @@ def get_interval_result(coin, minutes_ago):
             print(f"❌ Рынок для интервала не найден")
             return None
         
+        # Только проверка разрешен ли рынок, без проверки времени
         if not is_market_resolved(market):
             print(f"⏳ Рынок для интервала еще не разрешен")
             return None
