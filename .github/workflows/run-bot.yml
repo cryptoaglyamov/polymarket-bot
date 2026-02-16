@@ -1,7 +1,7 @@
 name: Run Polymarket Bot
 
 on:
-  workflow_dispatch:
+  workflow_dispatch:  # Только ручной запуск или через API
 
 jobs:
   run-bot:
@@ -33,7 +33,6 @@ jobs:
       run: |
         git config --local user.email "action@github.com"
         git config --local user.name "GitHub Action"
-        # Проверяем существование файла перед добавлением
         if [ -f test_bot_state.json ]; then
           git add test_bot_state.json
           git diff --quiet && git diff --staged --quiet || git commit -m "Update test bot state [skip ci]"
