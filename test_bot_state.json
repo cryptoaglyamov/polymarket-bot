@@ -1,17 +1,9 @@
 {
-  "pending_bets": {
-    "BTC_last": {
-      "slug": "btc-updown-15m-1771263900",
-      "direction": "Down",
-      "amount": 2.0,
-      "price": 0.5,
-      "placed_at": "2026-02-16 22:45:24"
-    }
-  },
+  "pending_bets": {},
   "statistics": {
-    "total_profit": 0.0,
-    "total_bets": 4,
-    "wins": 2,
+    "total_profit": 2.0,
+    "total_bets": 5,
+    "wins": 3,
     "losses": 2,
     "history": [
       {
@@ -43,6 +35,14 @@
         "profit": 2.0,
         "bet_amount": 2.0,
         "direction": "Down"
+      },
+      {
+        "timestamp": "2026-02-16T18:15:28.623486",
+        "coin": "BTC",
+        "result": "win",
+        "profit": 2.0,
+        "bet_amount": 2.0,
+        "direction": "Down"
       }
     ],
     "last_reset_date": "2026-02-16"
@@ -62,6 +62,10 @@
       {
         "timestamp": "2026-02-16T14:45:31.324413",
         "result": "Up"
+      },
+      {
+        "timestamp": "2026-02-16T18:15:28.623955",
+        "result": "Down"
       }
     ]
   },
