@@ -1,21 +1,36 @@
 {
   "pending_bets": {
-    "ETH_last": {
-      "slug": "eth-updown-15m-1771250400",
-      "direction": "Up",
+    "BTC_last": {
+      "slug": "btc-updown-15m-1771252200",
+      "direction": "Down",
       "amount": 2.0,
       "price": 0.5,
-      "placed_at": "2026-02-16 19:00:48",
+      "placed_at": "2026-02-16 19:30:30",
       "next_bet": 2.0
     }
   },
   "statistics": {
-    "total_profit": 0.0,
-    "total_bets": 0,
+    "total_profit": -2.0,
+    "total_bets": 1,
     "wins": 0,
-    "losses": 0,
-    "history": [],
+    "losses": 1,
+    "history": [
+      {
+        "timestamp": "2026-02-16T14:30:32.229433",
+        "coin": "ETH_last",
+        "result": "loss",
+        "profit": -2.0,
+        "bet_amount": 2.0
+      }
+    ],
     "last_reset_date": "2026-02-16"
   },
-  "last_results": {}
+  "last_results": {
+    "ETH": [
+      {
+        "timestamp": "2026-02-16T14:30:32.229921",
+        "result": "Down"
+      }
+    ]
+  }
 }
