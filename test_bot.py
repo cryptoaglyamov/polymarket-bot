@@ -17,8 +17,8 @@ TELEGRAM_CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID')
 # 👇 ВАШ РЕАЛЬНЫЙ АДРЕС КОШЕЛЬКА С USDC
 REAL_WALLET_ADDRESS = "0xc28d92cB2D25b5282c526FA1875d0268D1C4c177"
 
-# 👇 БАЛАНС ДЛЯ ТЕСТОВ
-TEST_BALANCE = 300.0
+# 👇 НАЧАЛЬНЫЙ БАЛАНС ДЛЯ ТЕСТОВ
+INITIAL_BALANCE = 300.0
 
 # 👇 РЕЖИМ ТЕСТИРОВАНИЯ
 TEST_MODE = True  # True = без реальных ставок, False = реальные ставки
@@ -31,8 +31,8 @@ if not PRIVATE_KEY:
 
 print("PRIVATE_KEY загружен:", PRIVATE_KEY[:10] + "..." + PRIVATE_KEY[-6:])
 print(f"🔧 РЕЖИМ ТЕСТИРОВАНИЯ: {'ВКЛЮЧЕН (без реальных ставок)' if TEST_MODE else 'ВЫКЛЮЧЕН (реальные ставки)'}")
-print(f"💰 ТЕСТОВЫЙ БАЛАНС: ${TEST_BALANCE}")
-print(f"📊 СТРАТЕГИЯ: Анализ последних {LOOKBACK_INTERVALS} интервалов")
+print(f"💰 НАЧАЛЬНЫЙ БАЛАНС: ${INITIAL_BALANCE}")
+print(f"📊 СТРАТЕГИЯ: Анализ последних {LOOKBACK_INTERVALS} интервалов + мартингейл")
 
 CHAIN_ID = 137
 HOST = "https://clob.polymarket.com"
@@ -87,6 +87,8 @@ def load_state():
                 }
             if "last_results" not in data:
                 data["last_results"] = {}
+            if "martingale" not in data:
+                data["martingale"] = {}  # Для хранения информации о текущих сериях
             return data
     return {
         "pending_bets": {},
@@ -98,33 +100,54 @@ def load_state():
             "history": [],
             "last_reset_date": datetime.now().strftime('%Y-%m-%d')
         },
-        "last_results": {}
+        "last_results": {},
+        "martingale": {}
     }
 
 def save_state(state):
     with open(STATE_FILE, "w") as f:
         json.dump(state, f, indent=2)
 
-def update_statistics(state, coin, result, profit, bet_amount):
+def update_statistics(state, coin, result, profit, bet_amount, direction):
     """Обновляет статистику после завершения ставки"""
     stats = state["statistics"]
     
+    # Добавляем в историю
     stats["history"].append({
         "timestamp": datetime.now().isoformat(),
         "coin": coin,
         "result": result,
         "profit": profit,
-        "bet_amount": bet_amount
+        "bet_amount": bet_amount,
+        "direction": direction
     })
     
+    # Обновляем общую статистику
     stats["total_bets"] += 1
     stats["total_profit"] += profit
     
     if profit > 0:
         stats["wins"] += 1
+        # Если выиграли - очищаем мартингейл для этой монеты
+        if coin in state["martingale"]:
+            del state["martingale"][coin]
+            print(f"✅ Серия завершена выигрышем, мартингейл сброшен")
     else:
         stats["losses"] += 1
+        # Если проиграли - обновляем мартингейл
+        next_bet = min(bet_amount * 2, MAX_BET)
+        if coin not in state["martingale"]:
+            state["martingale"][coin] = {
+                "direction": direction,
+                "next_bet": next_bet,
+                "losses_count": 1
+            }
+        else:
+            state["martingale"][coin]["next_bet"] = next_bet
+            state["martingale"][coin]["losses_count"] += 1
+        print(f"📉 Проигрыш, следующая ставка: ${next_bet} на {direction}")
     
+    # Ограничиваем историю последними 1000 записями
     if len(stats["history"]) > 1000:
         stats["history"] = stats["history"][-1000:]
     
@@ -179,6 +202,14 @@ def get_statistics_period(state, hours):
         "losses": period_losses,
         "win_rate": win_rate
     }
+
+def get_current_balance(state):
+    """Получает текущий баланс с учетом профита"""
+    if TEST_MODE:
+        return INITIAL_BALANCE + state["statistics"]["total_profit"]
+    else:
+        # TODO: добавить реальную проверку баланса
+        return INITIAL_BALANCE + state["statistics"]["total_profit"]
 
 def check_midnight():
     """Проверяет, наступила ли полночь по UTC+5"""
@@ -285,17 +316,6 @@ def get_token_id_and_price(market, direction: str):
         return None, prices[index] if index < len(prices) else 0.5
     
     return clob_ids[index], prices[index]
-
-def check_balance():
-    """Проверка баланса"""
-    try:
-        address = REAL_WALLET_ADDRESS
-        print(f"Проверка баланса для реального адреса: {address}")
-        print(f"💰 Используем тестовый баланс: ${TEST_BALANCE}")
-        return TEST_BALANCE
-    except Exception as e:
-        print(f"Ошибка проверки баланса: {e}")
-        return None
 
 def get_current_et_time():
     """Получает текущее время в ET для отображения"""
@@ -438,13 +458,29 @@ def get_interval_result(coin, minutes_ago):
 
 def determine_bet_direction(coin, state):
     """
-    Определяет направление ставки на основе последних результатов
-    Возвращает "Up", "Down" или None (если нет ставки)
+    Определяет направление ставки на основе последних результатов и мартингейла
+    Возвращает (direction, bet_amount) или (None, None)
     """
     print(f"\n{'='*50}")
     print(f"АНАЛИЗ ДЛЯ {coin}")
     print(f"{'='*50}")
     
+    # Проверяем, есть ли активная ставка
+    bet_key = f"{coin}_last"
+    if bet_key in state.get("pending_bets", {}):
+        print(f"⏸️ Есть активная ставка, ждем ее завершения")
+        return None, None
+    
+    # Проверяем мартингейл (были ли проигрыши подряд)
+    if coin in state["martingale"]:
+        martingale = state["martingale"][coin]
+        print(f"📉 Продолжаем серию мартингейла:")
+        print(f"   Направление: {martingale['direction']}")
+        print(f"   Ставка: ${martingale['next_bet']}")
+        print(f"   Проигрышей подряд: {martingale['losses_count']}")
+        return martingale['direction'], martingale['next_bet']
+    
+    # Получаем результаты последних двух интервалов для начала новой серии
     result_minus_1 = get_interval_result(coin, 15)  # Предыдущий (15 мин назад)
     result_minus_2 = get_interval_result(coin, 30)  # Позапрошлый (30 мин назад)
     
@@ -452,16 +488,17 @@ def determine_bet_direction(coin, state):
     print(f"   Интервал -1 (15 мин назад): {result_minus_1 if result_minus_1 else 'Нет данных'}")
     print(f"   Интервал -2 (30 мин назад): {result_minus_2 if result_minus_2 else 'Нет данных'}")
     
+    # Если два последних исхода одинаковые - начинаем новую серию
     if result_minus_1 and result_minus_2 and result_minus_1 == result_minus_2:
         direction = "Up" if result_minus_1 == "Down" else "Down"
         print(f"\n🎯 Обнаружено два одинаковых исхода подряд: {result_minus_1}")
-        print(f"👉 СТАВИМ НА: {direction}")
-        return direction
+        print(f"👉 НАЧИНАЕМ НОВУЮ СЕРИЮ НА: {direction} со ставкой ${BASE_BET}")
+        return direction, BASE_BET
     
     print(f"\n⏸️ Нет двух одинаковых исходов подряд, пропускаем ставку")
-    return None
+    return None, None
 
-def place_bet(client, coin, direction, bet_amount):
+def place_bet(client, coin, direction, bet_amount, state):
     """Размещает ставку на текущий интервал"""
     try:
         print(f"\n{'='*50}")
@@ -509,15 +546,11 @@ def place_bet(client, coin, direction, bet_amount):
             print(f"❌ Цена слишком высокая ({price:.4f} > {MAX_PRICE_FOR_OPPOSITE:.4f})")
             return False, None
         
-        available_balance = check_balance()
-        if available_balance is None:
-            print("❌ Не удалось проверить баланс")
-            return False, None
-            
-        print(f"💵 Доступный баланс: ${available_balance:.2f}")
+        current_balance = get_current_balance(state)
+        print(f"💵 Текущий баланс: ${current_balance:.2f}")
         
-        if available_balance < bet_amount:
-            print(f"❌ Недостаточно USDC: нужно ${bet_amount}, доступно ${available_balance:.2f}")
+        if current_balance < bet_amount:
+            print(f"❌ Недостаточно средств: баланс ${current_balance:.2f}, нужно ${bet_amount}")
             return False, None
         
         if TEST_MODE:
@@ -577,21 +610,19 @@ def main():
     print(f"Адрес из приватного ключа: {generated_address}")
     print(f"Реальный адрес кошелька: {REAL_WALLET_ADDRESS}")
     
-    print("\n=== ПРОВЕРКА БАЛАНСА ===")
-    real_balance = check_balance()
+    state = load_state()
     
-    if real_balance is None:
+    # Проверка баланса
+    print("\n=== ПРОВЕРКА БАЛАНСА ===")
+    current_balance = get_current_balance(state)
+    
+    if current_balance is None:
         print("❌ КРИТИЧЕСКАЯ ОШИБКА: Не удалось получить баланс")
         send_telegram("❌ Ошибка: не удалось получить баланс аккаунта")
         return
     
-    print(f"💰 Баланс: ${real_balance:.2f}")
-    
-    if real_balance < BASE_BET:
-        print(f"⚠️ Баланс меньше минимальной ставки ${BASE_BET}")
-        send_telegram(f"⚠️ Баланс ${real_balance:.2f} меньше минимальной ставки ${BASE_BET}")
-    else:
-        send_telegram(f"💰 Баланс: ${real_balance:.2f}")
+    print(f"💰 Текущий баланс: ${current_balance:.2f}")
+    send_telegram(f"💰 Баланс: ${current_balance:.2f}")
 
     try:
         api_creds = client.create_or_derive_api_creds()
@@ -602,8 +633,7 @@ def main():
         send_telegram(f"❌ Ошибка API creds: {str(e)}")
         return
 
-    state = load_state()
-    
+    # Проверка полночи для статистики
     if check_midnight():
         print("\n" + "="*50)
         print("📊 ЕЖЕДНЕВНАЯ СТАТИСТИКА (00:00 UTC+5)")
@@ -613,10 +643,16 @@ def main():
         six_hours = get_statistics_period(state, 6)
         total = state["statistics"]
         
+        # Информация о текущих сериях мартингейла
+        martingale_info = ""
+        for coin, mg in state["martingale"].items():
+            martingale_info += f"\n{coin}: {mg['losses_count']} проигрышей, следующая ${mg['next_bet']} на {mg['direction']}"
+        
         msg = f"""📊 <b>Статистика за 6 часов:</b>
 💰 Профит: ${six_hours['profit']:.2f}
 🎲 Ставок: {six_hours['bets']} | ✅ {six_hours['wins']} | ❌ {six_hours['losses']}
 📈 Винрейт: {six_hours['win_rate']:.1f}%
+💰 Баланс: ${get_current_balance(state):.2f}
 
 📊 <b>Статистика за 24 часа:</b>
 💰 Профит: ${daily['profit']:.2f}
@@ -627,11 +663,13 @@ def main():
 💰 Общий профит: ${total['total_profit']:.2f}
 🎲 Всего ставок: {total['total_bets']}
 ✅ Выигрышей: {total['wins']}
-❌ Проигрышей: {total['losses']}"""
+❌ Проигрышей: {total['losses']}
+📉 <b>Текущие серии:</b>{martingale_info if martingale_info else '\nНет активных серий'}"""
         
         print(msg)
         send_telegram(msg)
     
+    # Проверка результатов текущих ставок
     print("\n" + "="*50)
     print("ПРОВЕРКА ТЕКУЩИХ СТАВОК")
     print("="*50)
@@ -642,6 +680,7 @@ def main():
         direction = info["direction"]
         amount = info["amount"]
         price = info.get("price", 0.5)
+        coin = coin_key.split('_')[0]
         
         print(f"Проверка ставки: {coin_key}")
         
@@ -650,26 +689,31 @@ def main():
             w = get_winner(m)
             if w:
                 if w == direction:
+                    # Выигрыш
                     profit = amount * (1 / price - 1) if price > 0 else 0
                     msg = f"✅ Выиграна ставка {coin_key} → {direction} | +${profit:.2f}"
                     print(msg)
                     send_telegram(msg)
-                    update_statistics(state, coin_key, "win", profit, amount)
-                    update_last_result(state, coin_key.split('_')[0], w)
+                    update_statistics(state, coin, "win", profit, amount, direction)
+                    update_last_result(state, coin, w)
                     
                 else:
-                    new_bet = min(amount * 2, MAX_BET)
+                    # Проигрыш
                     profit = -amount
-                    msg = f"❌ Проиграна ставка {coin_key} → {direction} | следующая ${new_bet:.1f}"
+                    msg = f"❌ Проиграна ставка {coin_key} → {direction} | убыток -${amount:.2f}"
                     print(msg)
                     send_telegram(msg)
-                    update_statistics(state, coin_key, "loss", -amount, amount)
-                    update_last_result(state, coin_key.split('_')[0], w)
-                    state["pending_bets"][coin_key]["next_bet"] = new_bet
+                    update_statistics(state, coin, "loss", -amount, amount, direction)
+                    update_last_result(state, coin, w)
                 
                 del state["pending_bets"][coin_key]
                 save_state(state)
+                
+                # Отправляем обновленный баланс
+                new_balance = get_current_balance(state)
+                send_telegram(f"💰 Баланс: ${new_balance:.2f}")
 
+    # Проверка нового интервала
     print("\n" + "="*50)
     print("ПРОВЕРКА НОВОГО 15-МИНУТНОГО ИНТЕРВАЛА")
     print("="*50)
@@ -678,29 +722,31 @@ def main():
         print("✅ НАЧАЛО ИНТЕРВАЛА - выполняем анализ...")
         
         for coin in ["BTC", "ETH"]:
-            direction = determine_bet_direction(coin, state)
+            direction, bet_amount = determine_bet_direction(coin, state)
             
-            if not direction:
+            if not direction or not bet_amount:
                 continue
             
             bet_key = f"{coin}_last"
-            next_bet = state.get("pending_bets", {}).get(bet_key, {}).get("next_bet", BASE_BET)
-            next_bet = min(next_bet, MAX_BET)
             
-            if bet_key in state.get("pending_bets", {}):
-                print(f"{coin} → уже есть активная ставка")
+            # Проверяем баланс
+            current_balance = get_current_balance(state)
+            if current_balance < bet_amount:
+                print(f"❌ Недостаточно средств для {coin}: баланс ${current_balance:.2f}, нужно ${bet_amount}")
                 continue
             
-            if real_balance < next_bet:
-                print(f"❌ Недостаточно средств: баланс ${real_balance}, нужно ${next_bet}")
-                continue
-            
-            success, order_id = place_bet(client, coin, direction, next_bet)
+            success, order_id = place_bet(client, coin, direction, bet_amount, state)
             
             if success:
                 now_str = utc5_now.strftime('%Y-%m-%d %H:%M:%S')
-                direction_word = "ВВЕРХ" if direction == "Up" else "ВНИЗ"
-                msg = f"💰 Ставка: {coin} 15m → {direction} | ${next_bet:.1f} (после двух {direction_word})"
+                
+                # Определяем, новая это серия или продолжение
+                if coin in state["martingale"]:
+                    series_info = f"(продолжение серии, {state['martingale'][coin]['losses_count']} проигрыш)"
+                else:
+                    series_info = "(новая серия)"
+                
+                msg = f"💰 Ставка: {coin} 15m → {direction} | ${bet_amount:.1f} {series_info}"
                 if TEST_MODE:
                     msg = "🧪 [ТЕСТ] " + msg
                 print(msg)
@@ -714,10 +760,9 @@ def main():
                 state["pending_bets"][bet_key] = {
                     "slug": f"{coin.lower()}-updown-15m-{timestamp}",
                     "direction": direction,
-                    "amount": next_bet,
+                    "amount": bet_amount,
                     "price": 0.5,
-                    "placed_at": now_str,
-                    "next_bet": BASE_BET
+                    "placed_at": now_str
                 }
                 save_state(state)
     else:
