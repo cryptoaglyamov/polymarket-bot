@@ -341,12 +341,19 @@ def get_interval_result(coin, interval_offset):
         interval_start = (target_minute // 15) * 15
         target_time = target_time.replace(minute=interval_start, second=0, microsecond=0)
         
+        print(f"\n=== Получение результата для {coin}, интервал {interval_offset} ===")
+        print(f"Время ET: {target_time.hour}:{target_time.minute:02d}")
+        
+        # ✅ Проверяем, закончился ли интервал
+        interval_end_time = target_time + timedelta(minutes=15)
+        if et_now < interval_end_time:
+            print(f"⏳ Интервал {interval_offset} еще НЕ ЗАКОНЧИЛСЯ (закончится в {interval_end_time.hour}:{interval_end_time.minute:02d})")
+            print(f"   Текущее время ET: {et_now.hour}:{et_now.minute:02d}")
+            return None
+        
         # Конвертируем в Unix timestamp
         target_time_utc = target_time + timedelta(hours=5)
         timestamp = int(target_time_utc.timestamp())
-        
-        print(f"\n=== Получение результата для {coin}, интервал {interval_offset} ===")
-        print(f"Время ET: {target_time.hour}:{target_time.minute:02d}")
         print(f"Timestamp: {timestamp}")
         
         # Получаем рынок
@@ -665,8 +672,13 @@ def main():
                 if "pending_bets" not in state:
                     state["pending_bets"] = {}
                 
+                # Получаем timestamp для текущего интервала
+                current_time = et_now.replace(minute=(et_now.minute // 15) * 15, second=0, microsecond=0)
+                current_time_utc = current_time + timedelta(hours=5)
+                timestamp = int(current_time_utc.timestamp())
+                
                 state["pending_bets"][bet_key] = {
-                    "slug": f"{coin.lower()}-updown-15m-{int(datetime.now().timestamp())}",
+                    "slug": f"{coin.lower()}-updown-15m-{timestamp}",
                     "direction": direction,
                     "amount": next_bet,
                     "price": 0.5,
