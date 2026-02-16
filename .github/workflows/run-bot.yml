@@ -2,8 +2,6 @@ name: Run Polymarket Bot
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: '*/15 * * * *'  # Запуск каждые 15 минут
 
 jobs:
   run-bot:
