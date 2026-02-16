@@ -88,7 +88,7 @@ def load_state():
             if "last_results" not in data:
                 data["last_results"] = {}
             if "martingale" not in data:
-                data["martingale"] = {}  # Для хранения информации о текущих сериях
+                data["martingale"] = {}
             return data
     return {
         "pending_bets": {},
@@ -664,7 +664,7 @@ def main():
 🎲 Всего ставок: {total['total_bets']}
 ✅ Выигрышей: {total['wins']}
 ❌ Проигрышей: {total['losses']}
-📉 <b>Текущие серии:</b>{martingale_info if martingale_info else '\nНет активных серий'}"""
+📉 <b>Текущие серии:</b>{martingale_info if martingale_info else ' Нет активных серий'}"""
         
         print(msg)
         send_telegram(msg)
