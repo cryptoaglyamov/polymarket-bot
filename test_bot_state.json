@@ -1,25 +1,25 @@
 {
   "pending_bets": {
     "BTC_last": {
-      "slug": "btc-updown-15m-1771277400",
+      "slug": "btc-updown-15m-1771279200",
       "direction": "Down",
-      "amount": 4.0,
+      "amount": 8.0,
       "price": 0.5,
-      "placed_at": "2026-02-17 02:30:30"
+      "placed_at": "2026-02-17 03:00:31"
     },
     "ETH_last": {
-      "slug": "eth-updown-15m-1771277400",
+      "slug": "eth-updown-15m-1771279200",
       "direction": "Down",
-      "amount": 4.0,
+      "amount": 8.0,
       "price": 0.5,
-      "placed_at": "2026-02-17 02:30:30"
+      "placed_at": "2026-02-17 03:00:31"
     }
   },
   "statistics": {
-    "total_profit": 2.0,
-    "total_bets": 10,
+    "total_profit": -6.0,
+    "total_bets": 12,
     "wins": 5,
-    "losses": 5,
+    "losses": 7,
     "history": [
       {
         "timestamp": "2026-02-16T14:30:32.229433",
@@ -98,6 +98,22 @@
         "profit": -2.0,
         "bet_amount": 2.0,
         "direction": "Down"
+      },
+      {
+        "timestamp": "2026-02-16T22:00:33.207269",
+        "coin": "BTC",
+        "result": "loss",
+        "profit": -4.0,
+        "bet_amount": 4.0,
+        "direction": "Down"
+      },
+      {
+        "timestamp": "2026-02-16T22:00:34.263644",
+        "coin": "ETH",
+        "result": "loss",
+        "profit": -4.0,
+        "bet_amount": 4.0,
+        "direction": "Down"
       }
     ],
     "last_reset_date": "2026-02-16"
@@ -105,21 +121,21 @@
   "last_results": {
     "ETH": [
       {
-        "timestamp": "2026-02-16T20:15:22.454973",
-        "result": "Down"
+        "timestamp": "2026-02-16T21:30:33.076853",
+        "result": "Up"
       },
       {
-        "timestamp": "2026-02-16T21:30:33.076853",
+        "timestamp": "2026-02-16T22:00:34.264323",
         "result": "Up"
       }
     ],
     "BTC": [
       {
-        "timestamp": "2026-02-16T18:15:28.623955",
-        "result": "Down"
+        "timestamp": "2026-02-16T21:30:32.232957",
+        "result": "Up"
       },
       {
-        "timestamp": "2026-02-16T21:30:32.232957",
+        "timestamp": "2026-02-16T22:00:33.207966",
         "result": "Up"
       }
     ]
@@ -127,13 +143,13 @@
   "martingale": {
     "BTC": {
       "direction": "Down",
-      "next_bet": 4.0,
-      "losses_count": 1
+      "next_bet": 8.0,
+      "losses_count": 2
     },
     "ETH": {
       "direction": "Down",
-      "next_bet": 4.0,
-      "losses_count": 1
+      "next_bet": 8.0,
+      "losses_count": 2
     }
   }
 }
