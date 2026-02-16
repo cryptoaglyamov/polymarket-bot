@@ -1,0 +1,21 @@
+{
+  "pending_bets": {
+    "ETH_last": {
+      "slug": "eth-updown-15m-1771250400",
+      "direction": "Up",
+      "amount": 2.0,
+      "price": 0.5,
+      "placed_at": "2026-02-16 19:00:48",
+      "next_bet": 2.0
+    }
+  },
+  "statistics": {
+    "total_profit": 0.0,
+    "total_bets": 0,
+    "wins": 0,
+    "losses": 0,
+    "history": [],
+    "last_reset_date": "2026-02-16"
+  },
+  "last_results": {}
+}
