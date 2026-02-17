@@ -264,13 +264,10 @@ def get_market(slug: str):
         print(f"Ошибка gamma API {slug}: {e}")
         return None
 
-def get_market_by_timestamp(coin, timestamp):
-    """Получает рынок по timestamp"""
+def get_market_by_timestamp(timestamp):
+    """Получает рынок BTC по timestamp"""
     try:
-        if coin == "BTC":
-            slug = f"btc-updown-15m-{timestamp}"
-        else:
-            slug = f"eth-updown-15m-{timestamp}"
+        slug = f"btc-updown-15m-{timestamp}"
         
         url = f"https://gamma-api.polymarket.com/markets?slug={slug}"
         resp = requests.get(url, timeout=10)
@@ -363,8 +360,8 @@ def get_token_id_and_price(market, direction: str):
     
     return clob_ids[index], prices[index]
 
-def get_interval_result(coin, minutes_ago):
-    """Получает результат для интервала, который был minutes_ago минут назад"""
+def get_interval_result(minutes_ago):
+    """Получает результат для интервала BTC, который был minutes_ago минут назад"""
     try:
         et_now = get_current_et_time()
         
@@ -376,7 +373,7 @@ def get_interval_result(coin, minutes_ago):
         interval_start = (target_minute // 15) * 15
         target_time_et = target_time_et.replace(minute=interval_start, second=0, microsecond=0)
         
-        print(f"\n=== Получение результата для {coin}, {minutes_ago} мин назад ===")
+        print(f"\n=== Получение результата для BTC, {minutes_ago} мин назад ===")
         print(f"Время ET: {target_time_et.hour}:{target_time_et.minute:02d}")
         
         # Конвертируем ET в UTC для timestamp
@@ -386,7 +383,7 @@ def get_interval_result(coin, minutes_ago):
         print(f"UTC время: {target_time_utc}")
         
         # Получаем рынок
-        market = get_market_by_timestamp(coin, timestamp)
+        market = get_market_by_timestamp(timestamp)
         
         if not market:
             print(f"❌ Рынок не найден")
@@ -407,16 +404,16 @@ def get_interval_result(coin, minutes_ago):
         print(f"Ошибка получения результата: {e}")
         return None
 
-def find_current_interval_market(coin, minutes=15):
-    """Находит рынок для текущего интервала с правильным timestamp"""
+def find_current_interval_market():
+    """Находит рынок BTC для текущего интервала с правильным timestamp"""
     try:
         et_now = get_current_et_time()
-        print(f"\n=== Поиск рынка для {coin} ===")
+        print(f"\n=== Поиск рынка для BTC ===")
         print(f"Текущее ET время: {et_now}")
         
         # Округляем до начала текущего интервала в ET
         current_minute = et_now.minute
-        interval_start = (current_minute // minutes) * minutes
+        interval_start = (current_minute // 15) * 15
         et_interval = et_now.replace(minute=interval_start, second=0, microsecond=0)
         
         print(f"Интервал ET для ставки: {et_interval}")
@@ -428,14 +425,8 @@ def find_current_interval_market(coin, minutes=15):
         print(f"UTC время начала интервала: {interval_utc}")
         print(f"Timestamp: {timestamp}")
         
-        # Проверяем, что timestamp соответствует ожидаемому
-        # Для 1:45 ET 17 февраля ожидается 1771310700
-        expected_time_et = datetime(2026, 2, 17, 1, 45, tzinfo=timezone.utc) - timedelta(hours=5)
-        if et_interval == expected_time_et.replace(tzinfo=None):
-            print(f"✅ Это целевой интервал 1:45-2:00 ET")
-        
         # Получаем рынок
-        market = get_market_by_timestamp(coin, timestamp)
+        market = get_market_by_timestamp(timestamp)
         
         if market:
             prices = parse_prices(market.get('outcomePrices', ['0.5', '0.5']))
@@ -452,16 +443,16 @@ def find_current_interval_market(coin, minutes=15):
         print(f"Ошибка поиска рынка: {e}")
         return None
 
-def place_bet(client, coin, market, direction, bet_amount):
+def place_bet(client, market, direction, bet_amount):
     try:
-        print(f"\n=== Размещаем ставку {coin} {direction} ===")
+        print(f"\n=== Размещаем ставку BTC {direction} ===")
         
         if not market:
-            print(f"{coin} → рынок не передан")
+            print(f"BTC → рынок не передан")
             return False, None
         
         if is_market_resolved(market):
-            print(f"{coin} → рынок уже разрешен, нельзя ставить")
+            print(f"BTC → рынок уже разрешен, нельзя ставить")
             return False, None
         
         clob_ids = market.get("clobTokenIds", [])
@@ -472,13 +463,13 @@ def place_bet(client, coin, market, direction, bet_amount):
                 clob_ids = []
         
         if len(clob_ids) < 2:
-            print(f"{coin} → нет токенов для торговли")
+            print(f"BTC → нет токенов для торговли")
             return False, None
         
         token_id, price = get_token_id_and_price(market, direction)
         
         if token_id is None:
-            print(f"{coin} → не удалось получить token ID для {direction}")
+            print(f"BTC → не удалось получить token ID для {direction}")
             return False, None
         
         print(f"{direction} цена: {price:.4f}")
@@ -504,7 +495,7 @@ def place_bet(client, coin, market, direction, bet_amount):
             return True, mock_order_id
         else:
             bet_price = min(0.99, price + PRICE_BUFFER)
-            print(f"📤 Размещаем реальный ордер: {coin} {direction}, цена {bet_price:.4f}, размер ${bet_amount}")
+            print(f"📤 Размещаем реальный ордер: BTC {direction}, цена {bet_price:.4f}, размер ${bet_amount}")
             
             order_args = OrderArgs(
                 token_id=token_id,
@@ -628,23 +619,17 @@ def main():
         state["statistics"]["last_24h_report"] = datetime.now().isoformat()
         save_state(state)
     
-    # Получаем результаты двух предыдущих интервалов
+    # Получаем результаты двух предыдущих интервалов для BTC
     print("\n" + "="*50)
-    print("РЕЗУЛЬТАТЫ ПРЕДЫДУЩИХ ИНТЕРВАЛОВ")
+    print("РЕЗУЛЬТАТЫ ПРЕДЫДУЩИХ ИНТЕРВАЛОВ BTC")
     print("="*50)
     
-    btc_prev_15 = get_interval_result("BTC", 15)  # 15 мин назад
-    btc_prev_30 = get_interval_result("BTC", 30)  # 30 мин назад
-    eth_prev_15 = get_interval_result("ETH", 15)
-    eth_prev_30 = get_interval_result("ETH", 30)
+    btc_prev_15 = get_interval_result(15)  # 15 мин назад
+    btc_prev_30 = get_interval_result(30)  # 30 мин назад
     
     print(f"\n📊 Результаты BTC:")
     print(f"   -15 мин: {btc_prev_15 if btc_prev_15 else 'Нет данных'}")
     print(f"   -30 мин: {btc_prev_30 if btc_prev_30 else 'Нет данных'}")
-    
-    print(f"\n📊 Результаты ETH:")
-    print(f"   -15 мин: {eth_prev_15 if eth_prev_15 else 'Нет данных'}")
-    print(f"   -30 мин: {eth_prev_30 if eth_prev_30 else 'Нет данных'}")
     
     # Проверка результатов текущих ставок
     print("\n" + "="*50)
@@ -657,7 +642,7 @@ def main():
         direction = info["direction"]
         amount = info["amount"]
         price = info.get("price", 0.5)
-        coin = coin_key.split('_')[0]
+        coin = "BTC"
         
         print(f"Проверка ставки: {coin_key}")
         
@@ -685,36 +670,34 @@ def main():
 
     # Проверка нового интервала
     print("\n" + "="*50)
-    print("ПРОВЕРКА НОВОГО 15-МИНУТНОГО ИНТЕРВАЛА")
+    print("ПРОВЕРКА НОВОГО 15-МИНУТНОГО ИНТЕРВАЛА BTC")
     print("="*50)
     
     if is_new_interval(15):
         print("✅ НАЧАЛО ИНТЕРВАЛА - проверяем возможность ставки...")
         
-        for coin in ["BTC", "ETH"]:
-            # Получаем результаты двух предыдущих интервалов
-            prev_result_1 = get_interval_result(coin, 15)   # 15 мин назад
-            prev_result_2 = get_interval_result(coin, 30)   # 30 мин назад
+        # Получаем результаты двух предыдущих интервалов для BTC
+        prev_result_1 = get_interval_result(15)   # 15 мин назад
+        prev_result_2 = get_interval_result(30)   # 30 мин назад
+        
+        print(f"\n📊 Анализ для BTC:")
+        print(f"   Интервал -1 (15 мин назад): {prev_result_1 if prev_result_1 else 'Нет данных'}")
+        print(f"   Интервал -2 (30 мин назад): {prev_result_2 if prev_result_2 else 'Нет данных'}")
+        
+        # Если два предыдущих исхода одинаковые
+        if prev_result_1 and prev_result_2 and prev_result_1 == prev_result_2:
+            # Ставим на противоположный исход
+            next_dir = "Down" if prev_result_1 == "Up" else "Up"
+            print(f"🎯 Два одинаковых исхода: {prev_result_1}, ставим на {next_dir}")
             
-            print(f"\n📊 Анализ для {coin}:")
-            print(f"   Интервал -1 (15 мин назад): {prev_result_1 if prev_result_1 else 'Нет данных'}")
-            print(f"   Интервал -2 (30 мин назад): {prev_result_2 if prev_result_2 else 'Нет данных'}")
-            
-            # Если два предыдущих исхода одинаковые
-            if prev_result_1 and prev_result_2 and prev_result_1 == prev_result_2:
-                # Ставим на противоположный исход
-                next_dir = "Down" if prev_result_1 == "Up" else "Up"
-                print(f"🎯 Два одинаковых исхода: {prev_result_1}, ставим на {next_dir}")
-                
-                # Проверяем, есть ли активная ставка
-                bet_key = f"{coin}_last"
-                if bet_key in state.get("pending_bets", {}):
-                    print(f"{coin} → уже есть активная ставка")
-                    continue
-                
+            # Проверяем, есть ли активная ставка
+            bet_key = f"BTC_last"
+            if bet_key in state.get("pending_bets", {}):
+                print(f"BTC → уже есть активная ставка")
+            else:
                 # Определяем размер ставки (мартингейл)
-                if coin in state["martingale"]:
-                    bet_amount = state["martingale"][coin]["next_bet"]
+                if "BTC" in state["martingale"]:
+                    bet_amount = state["martingale"]["BTC"]["next_bet"]
                     print(f"📉 Продолжаем серию, ставка ${bet_amount}")
                 else:
                     bet_amount = BASE_BET
@@ -722,41 +705,37 @@ def main():
                 
                 if real_balance < bet_amount:
                     print(f"❌ Недостаточно средств: баланс ${real_balance}, нужно ${bet_amount}")
-                    continue
-                
-                # Находим рынок для текущего интервала
-                current_market = find_current_interval_market(coin, 15)
-                
-                if not current_market:
-                    print(f"{coin} → рынок для текущего интервала не найден")
-                    continue
-                
-                if is_market_resolved(current_market):
-                    print(f"{coin} → рынок уже разрешен, пропускаем")
-                    continue
-                
-                success, order_id = place_bet(client, coin, current_market, next_dir, bet_amount)
-                
-                if success:
-                    now_str = utc5_now.strftime('%Y-%m-%d %H:%M:%S')
-                    series_info = f"(серия {state['martingale'][coin]['losses_count'] + 1})" if coin in state["martingale"] else "(новая серия)"
-                    msg = f"💰 Ставка: {coin} 15m → {next_dir} | ${bet_amount:.1f} {series_info}"
-                    print(msg)
-                    send_telegram(msg)
+                else:
+                    # Находим рынок для текущего интервала
+                    current_market = find_current_interval_market()
                     
-                    if "pending_bets" not in state:
-                        state["pending_bets"] = {}
-                    
-                    state["pending_bets"][bet_key] = {
-                        "slug": current_market["slug"],
-                        "direction": next_dir,
-                        "amount": bet_amount,
-                        "price": 0.5,
-                        "placed_at": now_str
-                    }
-                    save_state(state)
-            else:
-                print(f"⏸️ Нет двух одинаковых исходов подряд, пропускаем")
+                    if not current_market:
+                        print(f"BTC → рынок для текущего интервала не найден")
+                    elif is_market_resolved(current_market):
+                        print(f"BTC → рынок уже разрешен, пропускаем")
+                    else:
+                        success, order_id = place_bet(client, current_market, next_dir, bet_amount)
+                        
+                        if success:
+                            now_str = utc5_now.strftime('%Y-%m-%d %H:%M:%S')
+                            series_info = f"(серия {state['martingale']['BTC']['losses_count'] + 1})" if "BTC" in state["martingale"] else "(новая серия)"
+                            msg = f"💰 Ставка: BTC 15m → {next_dir} | ${bet_amount:.1f} {series_info}"
+                            print(msg)
+                            send_telegram(msg)
+                            
+                            if "pending_bets" not in state:
+                                state["pending_bets"] = {}
+                            
+                            state["pending_bets"][bet_key] = {
+                                "slug": current_market["slug"],
+                                "direction": next_dir,
+                                "amount": bet_amount,
+                                "price": 0.5,
+                                "placed_at": now_str
+                            }
+                            save_state(state)
+        else:
+            print(f"⏸️ Нет двух одинаковых исходов подряд, пропускаем")
     else:
         current_minute = datetime.now(timezone(timedelta(hours=5))).minute
         et_hour = get_current_et_time().hour
