@@ -238,34 +238,64 @@ def check_reports(state):
 def get_current_balance(client):
     """Получает реальный баланс USDC с биржи"""
     try:
-        # Пробуем получить баланс через API
-        url = f"https://clob.polymarket.com/balance"
-        headers = {}
+        # Получаем адрес кошелька
+        address = client.get_address()
+        print(f"Проверка баланса для адреса: {address}")
         
+        # Прямой запрос к API Polymarket для получения баланса
+        url = f"https://clob.polymarket.com/balance?address={address}"
+        
+        headers = {}
         if hasattr(client, '_api_creds') and client._api_creds:
             headers = {
                 "Authorization": f"Bearer {client._api_creds.get('api_key', '')}",
                 "Content-Type": "application/json"
             }
         
+        print(f"Запрос к: {url}")
         resp = requests.get(url, headers=headers, timeout=10)
+        print(f"Статус ответа: {resp.status_code}")
         
         if resp.status_code == 200:
             data = resp.json()
-            if isinstance(data, dict) and 'balance' in data:
-                return float(data['balance'])
+            print(f"Ответ: {data}")
+            
+            # Парсим разные форматы ответа
+            if isinstance(data, dict):
+                if 'balance' in data:
+                    return float(data['balance'])
+                elif 'usdc' in data:
+                    return float(data['usdc'])
+                elif 'amount' in data:
+                    return float(data['amount'])
+            elif isinstance(data, (int, float)):
+                return float(data)
+            elif isinstance(data, str):
+                try:
+                    return float(data)
+                except:
+                    pass
         
-        # Альтернативный метод
-        balances = client.get_balances()
-        for balance in balances:
-            if balance.get('asset_type') == 'USDC' or balance.get('symbol') == 'USDC':
-                return float(balance.get('available', 0))
+        # Если не получилось, пробуем другой эндпоинт
+        url2 = f"https://clob.polymarket.com/balances"
+        print(f"Пробуем альтернативный URL: {url2}")
+        resp2 = requests.get(url2, headers=headers, timeout=10)
         
-        print("⚠️ Не удалось получить баланс через API")
+        if resp2.status_code == 200:
+            data = resp2.json()
+            print(f"Ответ: {data}")
+            if isinstance(data, list):
+                for item in data:
+                    if item.get('currency') == 'USDC' or item.get('asset') == 'USDC':
+                        return float(item.get('balance', 0))
+        
+        print("❌ Не удалось получить баланс через API")
         return None
         
     except Exception as e:
         print(f"Ошибка проверки баланса: {e}")
+        import traceback
+        traceback.print_exc()
         return None
 
 def check_midnight():
@@ -700,7 +730,7 @@ def main():
     if need_6h:
         print("\n" + "="*50)
         print("📊 ОТЧЕТ ЗА 6 ЧАСОВ")
-        print("="*50)
+        print("="*50")
         
         period = get_statistics_period(state, 6)
         total = state["statistics"]
@@ -728,7 +758,7 @@ def main():
     if need_24h:
         print("\n" + "="*50)
         print("📊 ОТЧЕТ ЗА 24 ЧАСА")
-        print("="*50)
+        print("="*50")
         
         period = get_statistics_period(state, 24)
         total = state["statistics"]
