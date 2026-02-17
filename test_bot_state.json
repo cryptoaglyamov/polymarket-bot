@@ -1,24 +1,9 @@
 {
-  "pending_bets": {
-    "BTC_last": {
-      "slug": "btc-updown-15m-1771302600",
-      "direction": "Down",
-      "amount": 2.0,
-      "price": 0.5,
-      "placed_at": "2026-02-17 09:30:25"
-    },
-    "ETH_last": {
-      "slug": "eth-updown-15m-1771302600",
-      "direction": "Down",
-      "amount": 2.0,
-      "price": 0.5,
-      "placed_at": "2026-02-17 09:30:25"
-    }
-  },
+  "pending_bets": {},
   "statistics": {
-    "total_profit": 18.0,
-    "total_bets": 23,
-    "wins": 11,
+    "total_profit": 22.0,
+    "total_bets": 25,
+    "wins": 13,
     "losses": 12,
     "history": [
       {
@@ -202,6 +187,22 @@
         "profit": 8.0,
         "bet_amount": 8.0,
         "direction": "Up"
+      },
+      {
+        "timestamp": "2026-02-17T04:45:25.399965",
+        "coin": "BTC",
+        "result": "win",
+        "profit": 2.0,
+        "bet_amount": 2.0,
+        "direction": "Down"
+      },
+      {
+        "timestamp": "2026-02-17T04:45:26.102171",
+        "coin": "ETH",
+        "result": "win",
+        "profit": 2.0,
+        "bet_amount": 2.0,
+        "direction": "Down"
       }
     ],
     "last_reset_date": "2026-02-16"
@@ -209,22 +210,22 @@
   "last_results": {
     "ETH": [
       {
-        "timestamp": "2026-02-17T04:15:24.518117",
-        "result": "Down"
-      },
-      {
         "timestamp": "2026-02-17T04:30:27.779519",
         "result": "Up"
+      },
+      {
+        "timestamp": "2026-02-17T04:45:26.102854",
+        "result": "Down"
       }
     ],
     "BTC": [
       {
-        "timestamp": "2026-02-17T04:15:23.374433",
-        "result": "Down"
-      },
-      {
         "timestamp": "2026-02-17T04:30:27.063775",
         "result": "Up"
+      },
+      {
+        "timestamp": "2026-02-17T04:45:25.400634",
+        "result": "Down"
       }
     ]
   },
