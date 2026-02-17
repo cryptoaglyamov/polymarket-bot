@@ -1,5 +1,20 @@
 {
-  "pending_bets": {},
+  "pending_bets": {
+    "BTC_last": {
+      "slug": "btc-updown-15m-1771306200",
+      "direction": "Up",
+      "amount": 2.0,
+      "price": 0.5,
+      "placed_at": "2026-02-17 10:30:30"
+    },
+    "ETH_last": {
+      "slug": "eth-updown-15m-1771306200",
+      "direction": "Up",
+      "amount": 2.0,
+      "price": 0.5,
+      "placed_at": "2026-02-17 10:30:30"
+    }
+  },
   "statistics": {
     "total_profit": 22.0,
     "total_bets": 25,
