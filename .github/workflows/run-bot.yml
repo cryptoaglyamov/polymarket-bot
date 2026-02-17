@@ -22,21 +22,21 @@ jobs:
       run: |
         pip install -r requirements.txt
         
-    - name: Run test bot
+    - name: Run bot
       env:
         PRIVATE_KEY: ${{ secrets.PRIVATE_KEY }}
         TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
         TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-      run: python test_bot.py
+      run: python bot.py
       
     - name: Save state file
       run: |
         git config --local user.email "action@github.com"
         git config --local user.name "GitHub Action"
-        if [ -f test_bot_state.json ]; then
-          git add test_bot_state.json
-          git diff --quiet && git diff --staged --quiet || git commit -m "Update test bot state [skip ci]"
+        if [ -f bot_state.json ]; then
+          git add bot_state.json
+          git diff --quiet && git diff --staged --quiet || git commit -m "Update bot state [skip ci]"
           git push
         else
-          echo "Файл test_bot_state.json еще не создан, пропускаем сохранение"
+          echo "Файл bot_state.json еще не создан, пропускаем сохранение"
         fi
