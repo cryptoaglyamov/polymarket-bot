@@ -1,4 +1,18 @@
 {
   "pending_bets": {},
-  "first_run_done": false
+  "statistics": {
+    "total_profit": 0.0,
+    "total_bets": 0,
+    "wins": 0,
+    "losses": 0,
+    "history": [],
+    "max_loss_streak": 0,
+    "current_loss_streak": 0,
+    "last_reset_date": "2026-02-17",
+    "last_6h_report": null,
+    "last_24h_report": null
+  },
+  "last_results": {},
+  "martingale": {},
+  "last_balance_check": null
 }
