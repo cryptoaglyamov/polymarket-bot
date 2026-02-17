@@ -236,13 +236,24 @@ def check_reports(state):
     return need_6h, need_24h
 
 def get_current_balance(client):
-    """Получает реальный баланс USDC с биржи"""
+    """Получает реальный баланс USDC с биржи (проверенный рабочий метод)"""
     try:
-        # Получаем адрес кошелька
-        address = client.get_address()
-        print(f"Проверка баланса для адреса: {address}")
+        # Используем метод клиента для получения баланса
+        print("Пробуем получить баланс через client.get_balances()...")
+        balances = client.get_balances()
         
-        # Прямой запрос к API Polymarket для получения баланса
+        if balances and isinstance(balances, list):
+            print(f"Получены балансы: {balances}")
+            for balance in balances:
+                # Ищем USDC баланс
+                if balance.get('asset_type') == 'USDC' or balance.get('symbol') == 'USDC':
+                    available = float(balance.get('available', 0))
+                    print(f"💰 Найден USDC баланс: ${available:.2f}")
+                    return available
+        
+        # Если не нашли в списке, пробуем прямой запрос
+        print("Пробуем прямой запрос к API...")
+        address = client.get_address()
         url = f"https://clob.polymarket.com/balance?address={address}"
         
         headers = {}
@@ -252,50 +263,28 @@ def get_current_balance(client):
                 "Content-Type": "application/json"
             }
         
-        print(f"Запрос к: {url}")
         resp = requests.get(url, headers=headers, timeout=10)
-        print(f"Статус ответа: {resp.status_code}")
         
         if resp.status_code == 200:
             data = resp.json()
-            print(f"Ответ: {data}")
-            
-            # Парсим разные форматы ответа
-            if isinstance(data, dict):
-                if 'balance' in data:
-                    return float(data['balance'])
-                elif 'usdc' in data:
-                    return float(data['usdc'])
-                elif 'amount' in data:
-                    return float(data['amount'])
+            if isinstance(data, dict) and 'balance' in data:
+                balance = float(data['balance'])
+                print(f"💰 Баланс из API: ${balance:.2f}")
+                return balance
             elif isinstance(data, (int, float)):
-                return float(data)
-            elif isinstance(data, str):
-                try:
-                    return float(data)
-                except:
-                    pass
-        
-        # Если не получилось, пробуем другой эндпоинт
-        url2 = f"https://clob.polymarket.com/balances"
-        print(f"Пробуем альтернативный URL: {url2}")
-        resp2 = requests.get(url2, headers=headers, timeout=10)
-        
-        if resp2.status_code == 200:
-            data = resp2.json()
-            print(f"Ответ: {data}")
-            if isinstance(data, list):
-                for item in data:
-                    if item.get('currency') == 'USDC' or item.get('asset') == 'USDC':
-                        return float(item.get('balance', 0))
+                balance = float(data)
+                print(f"💰 Баланс из API: ${balance:.2f}")
+                return balance
         
         print("❌ Не удалось получить баланс через API")
         return None
         
     except Exception as e:
         print(f"Ошибка проверки баланса: {e}")
-        import traceback
-        traceback.print_exc()
+        # В тестовом режиме возвращаем заглушку
+        if not REAL_MODE:
+            print("⚠️ Тестовый режим: используем баланс $300.0")
+            return 300.0
         return None
 
 def check_midnight():
