@@ -1,24 +1,24 @@
 {
   "pending_bets": {
     "BTC_last": {
-      "slug": "btc-updown-15m-1771301700",
-      "direction": "Up",
-      "amount": 8.0,
+      "slug": "btc-updown-15m-1771302600",
+      "direction": "Down",
+      "amount": 2.0,
       "price": 0.5,
-      "placed_at": "2026-02-17 09:15:21"
+      "placed_at": "2026-02-17 09:30:25"
     },
     "ETH_last": {
-      "slug": "eth-updown-15m-1771301700",
-      "direction": "Up",
-      "amount": 8.0,
+      "slug": "eth-updown-15m-1771302600",
+      "direction": "Down",
+      "amount": 2.0,
       "price": 0.5,
-      "placed_at": "2026-02-17 09:15:21"
+      "placed_at": "2026-02-17 09:30:25"
     }
   },
   "statistics": {
-    "total_profit": 2.0,
-    "total_bets": 21,
-    "wins": 9,
+    "total_profit": 18.0,
+    "total_bets": 23,
+    "wins": 11,
     "losses": 12,
     "history": [
       {
@@ -186,6 +186,22 @@
         "profit": -4.0,
         "bet_amount": 4.0,
         "direction": "Up"
+      },
+      {
+        "timestamp": "2026-02-17T04:30:27.063102",
+        "coin": "BTC",
+        "result": "win",
+        "profit": 8.0,
+        "bet_amount": 8.0,
+        "direction": "Up"
+      },
+      {
+        "timestamp": "2026-02-17T04:30:27.778873",
+        "coin": "ETH",
+        "result": "win",
+        "profit": 8.0,
+        "bet_amount": 8.0,
+        "direction": "Up"
       }
     ],
     "last_reset_date": "2026-02-16"
@@ -193,35 +209,24 @@
   "last_results": {
     "ETH": [
       {
-        "timestamp": "2026-02-17T03:45:28.922320",
+        "timestamp": "2026-02-17T04:15:24.518117",
         "result": "Down"
       },
       {
-        "timestamp": "2026-02-17T04:15:24.518117",
-        "result": "Down"
+        "timestamp": "2026-02-17T04:30:27.779519",
+        "result": "Up"
       }
     ],
     "BTC": [
       {
-        "timestamp": "2026-02-17T03:45:27.852465",
+        "timestamp": "2026-02-17T04:15:23.374433",
         "result": "Down"
       },
       {
-        "timestamp": "2026-02-17T04:15:23.374433",
-        "result": "Down"
+        "timestamp": "2026-02-17T04:30:27.063775",
+        "result": "Up"
       }
     ]
   },
-  "martingale": {
-    "BTC": {
-      "direction": "Up",
-      "next_bet": 8.0,
-      "losses_count": 2
-    },
-    "ETH": {
-      "direction": "Up",
-      "next_bet": 8.0,
-      "losses_count": 2
-    }
-  }
+  "martingale": {}
 }
