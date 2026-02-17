@@ -354,49 +354,38 @@ def get_current_et_time():
     et_now = now_utc5 - timedelta(hours=10)
     return et_now
 
-def get_previous_interval_result(coin, minutes=15):
-    """Получает результат предыдущего интервала"""
+def get_interval_result(coin, minutes_ago):
+    """Получает результат для интервала, который был minutes_ago минут назад"""
     try:
         et_now = get_current_et_time()
         
-        # Вычисляем время предыдущего интервала
-        current_minute = et_now.minute
-        interval_start = (current_minute // minutes) * minutes
-        prev_interval_start = interval_start - minutes
+        # Вычисляем время для нужного интервала
+        target_time = et_now - timedelta(minutes=minutes_ago)
         
-        prev_date = et_now.day
-        prev_hour = et_now.hour
+        # Округляем до начала 15-минутного интервала
+        target_minute = target_time.minute
+        interval_start = (target_minute // 15) * 15
+        target_time = target_time.replace(minute=interval_start, second=0, microsecond=0)
         
-        if prev_interval_start < 0:
-            prev_interval_start = 60 - minutes
-            prev_hour -= 1
-            
-        if prev_hour < 0:
-            prev_hour = 23
-            prev_date = et_now.day - 1
+        print(f"\n=== Получение результата для {coin}, {minutes_ago} мин назад ===")
+        print(f"Время ET: {target_time.hour}:{target_time.minute:02d}")
         
-        print(f"\n=== Получение результата для {coin} на {prev_hour}:{prev_interval_start:02d} ET ===")
-        
-        # Конвертируем ET в UTC для timestamp
-        prev_time_et = et_now.replace(hour=prev_hour, minute=prev_interval_start, second=0, microsecond=0)
-        prev_time_utc = prev_time_et + timedelta(hours=5)
-        timestamp = int(prev_time_utc.timestamp())
-        
+        # Конвертируем в UTC для timestamp
+        target_time_utc = target_time + timedelta(hours=5)
+        timestamp = int(target_time_utc.timestamp())
         print(f"Timestamp: {timestamp}")
         
         # Получаем рынок
         market = get_market_by_timestamp(coin, timestamp)
         
         if not market:
-            print(f"❌ Рынок для {coin} не найден")
+            print(f"❌ Рынок не найден")
             return None
         
-        # Проверяем, разрешен ли рынок
         if not is_market_resolved(market):
             print(f"⏳ Рынок еще не разрешен")
             return None
         
-        # Получаем победителя
         winner = get_winner(market)
         if winner:
             print(f"✅ Результат: {winner}")
@@ -405,7 +394,7 @@ def get_previous_interval_result(coin, minutes=15):
         return None
         
     except Exception as e:
-        print(f"Ошибка получения результата для {coin}: {e}")
+        print(f"Ошибка получения результата: {e}")
         return None
 
 def find_current_interval_market(coin, minutes=15):
@@ -413,7 +402,7 @@ def find_current_interval_market(coin, minutes=15):
     try:
         et_now = get_current_et_time()
         
-        # Округляем время до ближайших 15 минут
+        # Округляем время до начала текущего интервала
         current_minute = et_now.minute
         interval_start = (current_minute // minutes) * minutes
         et_interval = et_now.replace(minute=interval_start, second=0, microsecond=0)
@@ -423,7 +412,6 @@ def find_current_interval_market(coin, minutes=15):
         # Конвертируем в UTC для timestamp
         interval_time_utc = et_interval + timedelta(hours=5)
         timestamp = int(interval_time_utc.timestamp())
-        
         print(f"Timestamp: {timestamp}")
         
         # Получаем рынок
@@ -615,13 +603,23 @@ def main():
         state["statistics"]["last_24h_report"] = datetime.now().isoformat()
         save_state(state)
     
-    # Получаем результаты предыдущих интервалов
+    # Получаем результаты двух предыдущих интервалов
     print("\n" + "="*50)
     print("РЕЗУЛЬТАТЫ ПРЕДЫДУЩИХ ИНТЕРВАЛОВ")
     print("="*50)
     
-    btc_prev = get_previous_interval_result("BTC", 15)
-    eth_prev = get_previous_interval_result("ETH", 15)
+    btc_prev_15 = get_interval_result("BTC", 15)  # 15 мин назад
+    btc_prev_30 = get_interval_result("BTC", 30)  # 30 мин назад
+    eth_prev_15 = get_interval_result("ETH", 15)
+    eth_prev_30 = get_interval_result("ETH", 30)
+    
+    print(f"\n📊 Результаты BTC:")
+    print(f"   -15 мин: {btc_prev_15 if btc_prev_15 else 'Нет данных'}")
+    print(f"   -30 мин: {btc_prev_30 if btc_prev_30 else 'Нет данных'}")
+    
+    print(f"\n📊 Результаты ETH:")
+    print(f"   -15 мин: {eth_prev_15 if eth_prev_15 else 'Нет данных'}")
+    print(f"   -30 мин: {eth_prev_30 if eth_prev_30 else 'Нет данных'}")
     
     # Проверка результатов текущих ставок
     print("\n" + "="*50)
@@ -669,13 +667,13 @@ def main():
         print("✅ НАЧАЛО ИНТЕРВАЛА - проверяем возможность ставки...")
         
         for coin in ["BTC", "ETH"]:
-            # Получаем результаты двух предыдущих интервалов для стратегии
-            prev_result_1 = get_previous_interval_result(coin, 15)   # 15 мин назад
-            prev_result_2 = get_previous_interval_result(coin, 30)   # 30 мин назад
+            # Получаем результаты двух предыдущих интервалов
+            prev_result_1 = get_interval_result(coin, 15)   # 15 мин назад
+            prev_result_2 = get_interval_result(coin, 30)   # 30 мин назад
             
-            print(f"\nАнализ для {coin}:")
-            print(f"  Интервал -1 (15 мин назад): {prev_result_1 if prev_result_1 else 'Нет данных'}")
-            print(f"  Интервал -2 (30 мин назад): {prev_result_2 if prev_result_2 else 'Нет данных'}")
+            print(f"\n📊 Анализ для {coin}:")
+            print(f"   Интервал -1 (15 мин назад): {prev_result_1 if prev_result_1 else 'Нет данных'}")
+            print(f"   Интервал -2 (30 мин назад): {prev_result_2 if prev_result_2 else 'Нет данных'}")
             
             # Если два предыдущих исхода одинаковые
             if prev_result_1 and prev_result_2 and prev_result_1 == prev_result_2:
@@ -683,13 +681,13 @@ def main():
                 next_dir = "Down" if prev_result_1 == "Up" else "Up"
                 print(f"🎯 Два одинаковых исхода: {prev_result_1}, ставим на {next_dir}")
                 
-                # Проверяем мартингейл
+                # Проверяем, есть ли активная ставка
                 bet_key = f"{coin}_last"
                 if bet_key in state.get("pending_bets", {}):
                     print(f"{coin} → уже есть активная ставка")
                     continue
                 
-                # Определяем размер ставки
+                # Определяем размер ставки (мартингейл)
                 if coin in state["martingale"]:
                     bet_amount = state["martingale"][coin]["next_bet"]
                     print(f"📉 Продолжаем серию, ставка ${bet_amount}")
@@ -723,8 +721,6 @@ def main():
                     
                     if "pending_bets" not in state:
                         state["pending_bets"] = {}
-                    
-                    timestamp, _ = get_current_interval_timestamp(coin) if 'get_current_interval_timestamp' in globals() else (int(datetime.now().timestamp()), None)
                     
                     state["pending_bets"][bet_key] = {
                         "slug": current_market["slug"],
