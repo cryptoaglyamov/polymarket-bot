@@ -9,8 +9,8 @@
     "max_loss_streak": 0,
     "current_loss_streak": 0,
     "last_reset_date": "2026-02-17",
-    "last_6h_report": null,
-    "last_24h_report": null
+    "last_6h_report": "2026-02-17T06:27:57.843086",
+    "last_24h_report": "2026-02-17T06:27:58.244543"
   },
   "last_results": {},
   "martingale": {},
