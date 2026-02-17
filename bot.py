@@ -1,5 +1,4 @@
 import os
-import time
 import json
 import requests
 from datetime import datetime, timezone, timedelta
@@ -233,11 +232,26 @@ def check_balance():
         print(f"Ошибка проверки баланса: {e}")
         return None
 
+# ========== ФУНКЦИИ ДЛЯ РАБОТЫ С ВРЕМЕНЕМ ==========
+
+def get_current_et_time():
+    """Получает текущее время в ET (Eastern Time) правильно"""
+    # Текущее время в UTC
+    now_utc = datetime.now(timezone.utc)
+    # ET = UTC-5
+    et_now = now_utc - timedelta(hours=5)
+    return et_now
+
+def get_current_utc_time():
+    """Получает текущее время в UTC"""
+    return datetime.now(timezone.utc)
+
 # ========== ФУНКЦИИ ДЛЯ РАБОТЫ С POLYMARKET ==========
 
 def is_new_interval(minutes=15):
-    now = datetime.now(timezone(timedelta(hours=5)))
-    return now.minute % minutes == 0
+    """Проверяет, наступило ли начало интервала"""
+    now_et = get_current_et_time()
+    return now_et.minute % minutes == 0
 
 def get_market(slug: str):
     url = f"https://gamma-api.polymarket.com/markets?slug={slug}"
@@ -349,31 +363,27 @@ def get_token_id_and_price(market, direction: str):
     
     return clob_ids[index], prices[index]
 
-def get_current_et_time():
-    now_utc5 = datetime.now(timezone(timedelta(hours=5)))
-    et_now = now_utc5 - timedelta(hours=10)
-    return et_now
-
 def get_interval_result(coin, minutes_ago):
     """Получает результат для интервала, который был minutes_ago минут назад"""
     try:
         et_now = get_current_et_time()
         
-        # Вычисляем время для нужного интервала
-        target_time = et_now - timedelta(minutes=minutes_ago)
+        # Вычисляем время для нужного интервала в ET
+        target_time_et = et_now - timedelta(minutes=minutes_ago)
         
         # Округляем до начала 15-минутного интервала
-        target_minute = target_time.minute
+        target_minute = target_time_et.minute
         interval_start = (target_minute // 15) * 15
-        target_time = target_time.replace(minute=interval_start, second=0, microsecond=0)
+        target_time_et = target_time_et.replace(minute=interval_start, second=0, microsecond=0)
         
         print(f"\n=== Получение результата для {coin}, {minutes_ago} мин назад ===")
-        print(f"Время ET: {target_time.hour}:{target_time.minute:02d}")
+        print(f"Время ET: {target_time_et.hour}:{target_time_et.minute:02d}")
         
-        # Конвертируем в UTC для timestamp
-        target_time_utc = target_time + timedelta(hours=5)
+        # Конвертируем ET в UTC для timestamp
+        target_time_utc = target_time_et + timedelta(hours=5)
         timestamp = int(target_time_utc.timestamp())
         print(f"Timestamp: {timestamp}")
+        print(f"UTC время: {target_time_utc}")
         
         # Получаем рынок
         market = get_market_by_timestamp(coin, timestamp)
@@ -398,21 +408,31 @@ def get_interval_result(coin, minutes_ago):
         return None
 
 def find_current_interval_market(coin, minutes=15):
-    """Находит рынок для текущего интервала"""
+    """Находит рынок для текущего интервала с правильным timestamp"""
     try:
         et_now = get_current_et_time()
+        print(f"\n=== Поиск рынка для {coin} ===")
+        print(f"Текущее ET время: {et_now}")
         
-        # Округляем время до начала текущего интервала
+        # Округляем до начала текущего интервала в ET
         current_minute = et_now.minute
         interval_start = (current_minute // minutes) * minutes
         et_interval = et_now.replace(minute=interval_start, second=0, microsecond=0)
         
-        print(f"\n=== Поиск рынка для {coin} на {et_interval.hour}:{interval_start:02d} ET ===")
+        print(f"Интервал ET для ставки: {et_interval}")
         
-        # Конвертируем в UTC для timestamp
-        interval_time_utc = et_interval + timedelta(hours=5)
-        timestamp = int(interval_time_utc.timestamp())
+        # Конвертируем ET в UTC для timestamp (ET = UTC-5, значит UTC = ET+5)
+        interval_utc = et_interval + timedelta(hours=5)
+        timestamp = int(interval_utc.timestamp())
+        
+        print(f"UTC время начала интервала: {interval_utc}")
         print(f"Timestamp: {timestamp}")
+        
+        # Проверяем, что timestamp соответствует ожидаемому
+        # Для 1:45 ET 17 февраля ожидается 1771310700
+        expected_time_et = datetime(2026, 2, 17, 1, 45, tzinfo=timezone.utc) - timedelta(hours=5)
+        if et_interval == expected_time_et.replace(tzinfo=None):
+            print(f"✅ Это целевой интервал 1:45-2:00 ET")
         
         # Получаем рынок
         market = get_market_by_timestamp(coin, timestamp)
@@ -425,7 +445,7 @@ def find_current_interval_market(coin, minutes=15):
             print(f"   Разрешен: {resolved}")
             return market
         
-        print(f"❌ Рынок не найден")
+        print(f"❌ Рынок не найден для timestamp {timestamp}")
         return None
         
     except Exception as e:
@@ -516,8 +536,13 @@ def place_bet(client, coin, market, direction, bet_amount):
 
 def main():
     print("Запуск бота Polymarket...")
+    
+    # Используем правильное получение времени
     et_now = get_current_et_time()
-    utc5_now = datetime.now(timezone(timedelta(hours=5)))
+    utc_now = get_current_utc_time()
+    utc5_now = utc_now + timedelta(hours=5)  # UTC+5 для сервера
+    
+    print(f"Время UTC: {utc_now.strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"Время ET: {et_now.strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"Время сервера (UTC+5): {utc5_now.strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"Интервал: 15 минут")
@@ -733,7 +758,7 @@ def main():
             else:
                 print(f"⏸️ Нет двух одинаковых исходов подряд, пропускаем")
     else:
-        current_minute = utc5_now.minute
+        current_minute = datetime.now(timezone(timedelta(hours=5))).minute
         et_hour = get_current_et_time().hour
         et_minute = get_current_et_time().minute
         next_interval = ((et_minute // 15) + 1) * 15
