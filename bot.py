@@ -730,7 +730,7 @@ def main():
     if need_6h:
         print("\n" + "="*50)
         print("📊 ОТЧЕТ ЗА 6 ЧАСОВ")
-        print("="*50")
+        print("="*50)
         
         period = get_statistics_period(state, 6)
         total = state["statistics"]
@@ -758,7 +758,7 @@ def main():
     if need_24h:
         print("\n" + "="*50)
         print("📊 ОТЧЕТ ЗА 24 ЧАСА")
-        print("="*50")
+        print("="*50)
         
         period = get_statistics_period(state, 24)
         total = state["statistics"]
